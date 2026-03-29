@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useCallback, DragEvent } from "react";
 import {
   Mic, Volume2, VolumeX, CheckCircle, ArrowLeft, ArrowRight,
   Shield, AlertTriangle, Square, FileText, Music, Video,
-  Upload, X, Loader2, Image as ImageIcon,
+  Upload, X, Loader2, Image as ImageIcon, MapPin, Search,
 } from "lucide-react";
 import { themes, neighborhoods } from "@/data/stories";
 
@@ -115,10 +115,18 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const [fileError, setFileError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Location state
+  const [locationMode, setLocationMode] = useState<"neighborhood" | "address">("neighborhood");
+  const [addressInput, setAddressInput] = useState("");
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeResult, setGeocodeResult] = useState<{ lat: number; lng: number; display: string } | null>(null);
+  const [geocodeError, setGeocodeError] = useState("");
+
   const [form, setForm] = useState({
     name: "", anonymous: false,
     neighborhood: "", theme: "",
     title: "", story: "",
+    lat: 0, lng: 0, address: "",
   });
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -126,10 +134,63 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef = useRef<any>(null);
 
+  const hasLocation = form.lat !== 0 && form.lng !== 0;
   const canProceedFromStory = !!(
     form.title && form.story && form.neighborhood && form.theme &&
-    (form.name || form.anonymous)
+    (form.name || form.anonymous) && hasLocation
   );
+
+  // When neighborhood changes, auto-update lat/lng from the neighborhoods list
+  const handleNeighborhoodChange = useCallback((name: string) => {
+    const found = neighborhoods.find(n => n.name === name);
+    if (found && locationMode === "neighborhood") {
+      setForm(f => ({ ...f, neighborhood: name, lat: found.lat, lng: found.lng, address: "" }));
+      setGeocodeResult(null);
+      setGeocodeError("");
+    } else {
+      setForm(f => ({ ...f, neighborhood: name }));
+    }
+  }, [locationMode]);
+
+  // When switching to neighborhood mode, re-resolve from current selection
+  const switchToNeighborhoodMode = useCallback(() => {
+    setLocationMode("neighborhood");
+    setGeocodeResult(null);
+    setGeocodeError("");
+    const found = neighborhoods.find(n => n.name === form.neighborhood);
+    if (found) {
+      setForm(f => ({ ...f, lat: found.lat, lng: found.lng, address: "" }));
+    } else {
+      setForm(f => ({ ...f, lat: 0, lng: 0, address: "" }));
+    }
+  }, [form.neighborhood]);
+
+  const geocodeAddress = useCallback(async () => {
+    const q = addressInput.trim();
+    if (!q) return;
+    setGeocoding(true);
+    setGeocodeError("");
+    setGeocodeResult(null);
+    try {
+      const query = encodeURIComponent(`${q}, Richmond, VA`);
+      const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&countrycodes=us`;
+      const res = await fetch(url, { headers: { "Accept-Language": "en" } });
+      const data = await res.json();
+      if (!data.length) {
+        setGeocodeError("Address not found. Try a different address or use a neighborhood.");
+        return;
+      }
+      const { lat, lon, display_name } = data[0];
+      const latN = parseFloat(lat);
+      const lngN = parseFloat(lon);
+      setGeocodeResult({ lat: latN, lng: lngN, display: display_name });
+      setForm(f => ({ ...f, lat: latN, lng: lngN, address: q }));
+    } catch {
+      setGeocodeError("Could not reach geocoding service. Check your connection.");
+    } finally {
+      setGeocoding(false);
+    }
+  }, [addressInput]);
 
   useEffect(() => {
     return () => {
@@ -292,6 +353,9 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       fd.append("title", form.title);
       fd.append("story", form.story);
       fd.append("lang", lang);
+      fd.append("lat", String(form.lat));
+      fd.append("lng", String(form.lng));
+      fd.append("address", form.address);
 
       if (consentBlobRef.current) {
         fd.append("consent_audio", consentBlobRef.current, "consent.webm");
@@ -491,7 +555,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   id="story-neighborhood"
                   title="Neighborhood"
                   value={form.neighborhood}
-                  onChange={(e) => setForm({ ...form, neighborhood: e.target.value })}
+                  onChange={(e) => handleNeighborhoodChange(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
                 >
                   <option value="">Select...</option>
@@ -511,6 +575,97 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   {themes.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+            </div>
+
+            {/* ── Map Pin Location ── */}
+            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#1e3a5f] shrink-0" />
+                <span className="text-sm font-medium">Where is your story set?</span>
+              </div>
+
+              {/* Mode toggle */}
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs w-fit bg-white">
+                <button
+                  type="button"
+                  onClick={switchToNeighborhoodMode}
+                  className={`px-4 py-2 transition-colors ${locationMode === "neighborhood" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
+                >
+                  Richmond Area
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLocationMode("address")}
+                  className={`px-4 py-2 transition-colors ${locationMode === "address" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
+                >
+                  Specific Address
+                </button>
+              </div>
+
+              {locationMode === "neighborhood" ? (
+                <div>
+                  {form.neighborhood && hasLocation ? (
+                    <div className="flex items-center gap-2 text-sm text-green-700">
+                      <CheckCircle className="w-4 h-4 shrink-0" />
+                      <span>Pin placed at <strong>{form.neighborhood}</strong> on the map.</span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Select a neighborhood above — your story pin will be placed at that area's center.</p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label htmlFor="location-address" className="block text-xs text-gray-500">
+                    Enter a Richmond street address, landmark, or intersection:
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="location-address"
+                      type="text"
+                      value={addressInput}
+                      onChange={(e) => { setAddressInput(e.target.value); setGeocodeResult(null); setGeocodeError(""); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); geocodeAddress(); } }}
+                      placeholder="e.g. 100 N. 2nd St or Hippodrome Theatre"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={geocodeAddress}
+                      disabled={!addressInput.trim() || geocoding}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-[#1e3a5f] text-white rounded-lg hover:bg-[#162d4a] transition-colors text-sm disabled:opacity-40"
+                    >
+                      {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+                      Find
+                    </button>
+                  </div>
+
+                  {geocodeResult && (
+                    <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
+                      <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-medium">Location found</p>
+                        <p className="text-xs text-green-600 mt-0.5 leading-snug">{geocodeResult.display}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {geocodeError && (
+                    <p className="text-xs text-red-600 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" /> {geocodeError}
+                    </p>
+                  )}
+
+                  {!geocodeResult && !geocodeError && form.neighborhood && (
+                    <p className="text-xs text-gray-400">If no address is found, your pin will fall back to the {form.neighborhood} area.</p>
+                  )}
+                </div>
+              )}
+
+              {!hasLocation && form.neighborhood === "" && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> Select a neighborhood to place your story on the map.
+                </p>
+              )}
             </div>
 
             {/* Title */}
@@ -723,6 +878,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               {[
                 { label: "Name", value: form.anonymous ? "Anonymous" : form.name },
                 { label: "Neighborhood", value: form.neighborhood },
+                { label: "Map Pin", value: form.address ? `${form.address} (${form.lat.toFixed(4)}, ${form.lng.toFixed(4)})` : `${form.neighborhood} area center` },
                 { label: "Theme", value: form.theme },
                 { label: "Story Type", value: storyBlob ? "Voice recording + transcript" : "Text" },
               ].map(({ label, value }) => (
