@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { Header } from "@/components/Header";
 
@@ -21,14 +21,39 @@ export default function Home() {
   const [selectedNeighborhood, setSelectedNeighborhood] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [featuredDismissed, setFeaturedDismissed] = useState(false);
+  const [submittedStories, setSubmittedStories] = useState<Story[]>([]);
 
+  useEffect(() => {
+    fetch("/api/stories")
+      .then((r) => r.json())
+      .then((data: any[]) => {
+        const mapped: Story[] = data.map((s) => ({
+          id: s.id,
+          title: s.title,
+          author: s.author,
+          neighborhood: s.neighborhood,
+          lat: s.lat,
+          lng: s.lng,
+          excerpt: s.excerpt,
+          type: (["photo", "video", "voice", "text"].includes(s.type) ? s.type : "text") as Story["type"],
+          theme: s.theme,
+          date: s.date,
+          imageUrl: s.imageUrl ?? undefined,
+          consentGiven: true,
+        }));
+        setSubmittedStories(mapped);
+      })
+      .catch(() => {/* backend not reachable — proceed with seed data only */});
+  }, [currentView]); // re-fetch when returning to map after a submission
+
+  const allStories = [...sampleStories, ...submittedStories];
   const featuredStory = sampleStories.find((s) => s.featured);
 
   const handleStorySelect = useCallback((story: Story) => {
     setSelectedStory(story);
   }, []);
 
-  const filteredCount = sampleStories.filter((s) => {
+  const filteredCount = allStories.filter((s) => {
     if (selectedTheme && s.theme !== selectedTheme) return false;
     if (selectedNeighborhood && s.neighborhood !== selectedNeighborhood) return false;
     return true;
@@ -153,7 +178,7 @@ export default function Home() {
           </div>
 
           <StoryMap
-            stories={sampleStories}
+            stories={allStories}
             selectedTheme={selectedTheme}
             selectedNeighborhood={selectedNeighborhood}
             onStorySelect={handleStorySelect}
