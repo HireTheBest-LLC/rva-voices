@@ -1,6 +1,10 @@
 "use client";
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Mic, Volume2, VolumeX, CheckCircle, ArrowLeft, ArrowRight, Shield, AlertTriangle, Square, FileText } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, DragEvent } from "react";
+import {
+  Mic, Volume2, VolumeX, CheckCircle, ArrowLeft, ArrowRight,
+  Shield, AlertTriangle, Square, FileText, Music, Video,
+  Upload, X, Loader2, Image as ImageIcon,
+} from "lucide-react";
 import { themes, neighborhoods } from "@/data/stories";
 
 const CONSENT_EN = {
@@ -67,24 +71,49 @@ Si usted tiene menos de 18 años, por favor no envíe su historia sin el permiso
 
 const steps = ["Consent", "Your Story", "Review"];
 
+const ACCEPTED = "image/*,audio/*,video/*";
+const MAX_FILES = 5;
+const MAX_BYTES = 100 * 1024 * 1024;
+
+interface MediaFile {
+  file: File;
+  preview: string;
+  type: "image" | "audio" | "video" | "other";
+}
+
+function mediaType(f: File): MediaFile["type"] {
+  if (f.type.startsWith("image/")) return "image";
+  if (f.type.startsWith("audio/")) return "audio";
+  if (f.type.startsWith("video/")) return "video";
+  return "other";
+}
+
+const playfair = { fontFamily: "'Playfair Display', serif" };
+
 export function SubmitStory({ onBack }: { onBack: () => void }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
   const [lang, setLang] = useState<"en" | "es">("en");
   const consent = lang === "en" ? CONSENT_EN : CONSENT_ES;
 
-  // Consent audio state
   const [isPlaying, setIsPlaying] = useState(false);
   const [consentRecorded, setConsentRecorded] = useState(false);
   const [isRecordingConsent, setIsRecordingConsent] = useState(false);
   const [consentTime, setConsentTime] = useState(0);
+  const consentBlobRef = useRef<Blob | null>(null);
 
-  // Story input state
   const [storyMode, setStoryMode] = useState<"text" | "voice">("text");
   const [isRecordingStory, setIsRecordingStory] = useState(false);
   const [storyBlob, setStoryBlob] = useState<Blob | null>(null);
   const [storyTime, setStoryTime] = useState(0);
   const [liveTranscript, setLiveTranscript] = useState("");
+
+  const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     name: "", anonymous: false,
@@ -97,17 +126,20 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  const canProceedFromStory = !!(form.title && form.story && form.neighborhood && form.theme && (form.name || form.anonymous));
+  const canProceedFromStory = !!(
+    form.title && form.story && form.neighborhood && form.theme &&
+    (form.name || form.anonymous)
+  );
 
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       recognitionRef.current?.stop();
       window.speechSynthesis?.cancel();
+      mediaFiles.forEach(m => URL.revokeObjectURL(m.preview));
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Cancel audio on lang change
   useEffect(() => {
     window.speechSynthesis?.cancel();
     setIsPlaying(false);
@@ -120,7 +152,9 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       setIsPlaying(false);
       return;
     }
-    const u = new SpeechSynthesisUtterance(consent.text + "\n\n" + consent.promptLabel + "\n" + consent.prompt);
+    const u = new SpeechSynthesisUtterance(
+      consent.text + "\n\n" + consent.promptLabel + "\n" + consent.prompt
+    );
     u.lang = consent.lang;
     u.rate = 0.88;
     u.onend = () => setIsPlaying(false);
@@ -136,6 +170,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       chunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = () => {
+        consentBlobRef.current = new Blob(chunksRef.current, { type: "audio/webm" });
         setConsentRecorded(true);
         stream.getTracks().forEach(t => t.stop());
         if (timerRef.current) clearInterval(timerRef.current);
@@ -207,6 +242,80 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
     if (timerRef.current) clearInterval(timerRef.current);
   }, []);
 
+  const addFiles = useCallback((incoming: FileList | File[]) => {
+    setFileError("");
+    const arr = Array.from(incoming);
+    const next: MediaFile[] = [];
+
+    for (const f of arr) {
+      if (mediaFiles.length + next.length >= MAX_FILES) {
+        setFileError(`Maximum ${MAX_FILES} files allowed.`);
+        break;
+      }
+      if (f.size > MAX_BYTES) {
+        setFileError(`"${f.name}" exceeds the 100 MB limit.`);
+        continue;
+      }
+      const mtype = mediaType(f);
+      if (mtype === "other") {
+        setFileError(`"${f.name}" is not an accepted type (image, audio, or video).`);
+        continue;
+      }
+      next.push({ file: f, preview: URL.createObjectURL(f), type: mtype });
+    }
+
+    if (next.length > 0) setMediaFiles(prev => [...prev, ...next]);
+  }, [mediaFiles.length]);
+
+  const removeFile = useCallback((idx: number) => {
+    setMediaFiles(prev => {
+      URL.revokeObjectURL(prev[idx].preview);
+      return prev.filter((_, i) => i !== idx);
+    });
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    addFiles(e.dataTransfer.files);
+  }, [addFiles]);
+
+  const handleSubmit = useCallback(async () => {
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const fd = new FormData();
+      fd.append("name", form.name);
+      fd.append("anonymous", String(form.anonymous));
+      fd.append("neighborhood", form.neighborhood);
+      fd.append("theme", form.theme);
+      fd.append("title", form.title);
+      fd.append("story", form.story);
+      fd.append("lang", lang);
+
+      if (consentBlobRef.current) {
+        fd.append("consent_audio", consentBlobRef.current, "consent.webm");
+      }
+      if (storyBlob) {
+        fd.append("story_audio", storyBlob, "story.webm");
+      }
+      for (const mf of mediaFiles) {
+        fd.append("media_files", mf.file, mf.file.name);
+      }
+
+      const res = await fetch("/api/submit", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || "Submission failed");
+      }
+      setSubmitted(true);
+    } catch (e: any) {
+      setSubmitError(e.message || "An error occurred. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [form, lang, storyBlob, mediaFiles]);
+
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
   if (submitted) {
@@ -216,14 +325,14 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-green-600" />
           </div>
-          <h1 style={{ fontFamily: "'Playfair Display', serif" }}>Thank You for Sharing</h1>
+          <h1 style={playfair}>Thank You for Sharing</h1>
           <p className="text-gray-600 mt-3 mb-6">
             Your story has been submitted for review. Once approved, it will appear on the Richmond Stories Map.
           </p>
           <p className="text-sm text-gray-500 mb-6">
             You may withdraw your story at any time by emailing hack4rva@aireadyrva.org
           </p>
-          <button onClick={onBack} className="px-6 py-3 bg-[#1e3a5f] text-white rounded-lg hover:bg-[#162d4a] transition-colors">
+          <button type="button" onClick={onBack} className="px-6 py-3 bg-[#1e3a5f] text-white rounded-lg hover:bg-[#162d4a] transition-colors">
             Return to Map
           </button>
         </div>
@@ -234,15 +343,15 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-2xl mx-auto p-6">
-        <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors">
+        <button type="button" onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors">
           <ArrowLeft className="w-4 h-4" /> Back to Map
         </button>
 
         <div className="flex items-center justify-between mb-2">
-          <h1 style={{ fontFamily: "'Playfair Display', serif" }}>Tell Us Your Story</h1>
+          <h1 style={playfair}>Tell Us Your Story</h1>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
-            <button onClick={() => setLang("en")} className={`px-3 py-1.5 transition-colors ${lang === "en" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}>EN</button>
-            <button onClick={() => setLang("es")} className={`px-3 py-1.5 transition-colors ${lang === "es" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}>ES</button>
+            <button type="button" onClick={() => setLang("en")} className={`px-3 py-1.5 transition-colors ${lang === "en" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}>EN</button>
+            <button type="button" onClick={() => setLang("es")} className={`px-3 py-1.5 transition-colors ${lang === "es" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}>ES</button>
           </div>
         </div>
         <p className="text-gray-600 mb-8">Share your lived experience to help preserve Richmond's history and inform the city's future.</p>
@@ -265,13 +374,13 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-5">
             <div className="flex items-center gap-3">
               <Shield className="w-6 h-6 text-[#1e3a5f] shrink-0" />
-              <h2 style={{ fontFamily: "'Playfair Display', serif" }}>Informed Consent</h2>
+              <h2 style={playfair}>Informed Consent</h2>
             </div>
 
-            {/* Play consent */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-sm text-blue-800 mb-3">{consent.listenFirst}</p>
               <button
+                type="button"
                 onClick={playConsent}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${isPlaying ? "bg-red-100 text-red-700 hover:bg-red-200" : "bg-[#1e3a5f] text-white hover:bg-[#162d4a]"}`}
               >
@@ -281,23 +390,21 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               </button>
             </div>
 
-            {/* Scrollable consent text */}
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 max-h-44 overflow-y-auto text-sm text-gray-700 leading-relaxed whitespace-pre-line">
               {consent.text}
             </div>
 
-            {/* Spoken consent prompt */}
             <div className="border border-amber-200 bg-amber-50 rounded-lg p-4">
               <p className="text-xs font-semibold text-amber-800 mb-2 uppercase tracking-wide">{consent.promptLabel}</p>
               <p className="text-sm text-amber-900 italic leading-relaxed">{consent.prompt}</p>
             </div>
 
-            {/* Record consent */}
             <div className="space-y-3">
               {!consentRecorded ? (
                 <div className="flex items-center gap-3 flex-wrap">
                   {!isRecordingConsent ? (
                     <button
+                      type="button"
                       onClick={startConsentRec}
                       className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
                     >
@@ -305,6 +412,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                     </button>
                   ) : (
                     <button
+                      type="button"
                       onClick={stopConsentRec}
                       className="flex items-center gap-2 px-5 py-2.5 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors text-sm"
                     >
@@ -322,7 +430,8 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   <CheckCircle className="w-5 h-5 text-green-600" />
                   <span className="text-sm text-green-700">{consent.consentRecorded}</span>
                   <button
-                    onClick={() => { setConsentRecorded(false); setConsentTime(0); }}
+                    type="button"
+                    onClick={() => { setConsentRecorded(false); consentBlobRef.current = null; setConsentTime(0); }}
                     className="ml-auto text-xs text-gray-400 hover:text-gray-600"
                   >
                     Re-record
@@ -333,6 +442,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
 
             <div className="flex justify-end">
               <button
+                type="button"
                 disabled={!consentRecorded}
                 onClick={() => setCurrentStep(1)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#1e3a5f] text-white rounded-lg disabled:opacity-40 hover:bg-[#162d4a] transition-colors"
@@ -346,13 +456,14 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
         {/* ── STEP 1: YOUR STORY ── */}
         {currentStep === 1 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-5">
-            <h2 style={{ fontFamily: "'Playfair Display', serif" }}>Your Story</h2>
+            <h2 style={playfair}>Your Story</h2>
 
             {/* Name */}
             <div>
-              <label className="block text-sm mb-1">Your Name</label>
+              <label htmlFor="story-name" className="block text-sm mb-1">Your Name</label>
               <div className="flex items-center gap-3">
                 <input
+                  id="story-name"
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value, anonymous: false })}
@@ -361,7 +472,12 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 disabled:opacity-40"
                 />
                 <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
-                  <input type="checkbox" checked={form.anonymous} onChange={(e) => setForm({ ...form, anonymous: e.target.checked, name: "" })} className="accent-[#1e3a5f]" />
+                  <input
+                    type="checkbox"
+                    checked={form.anonymous}
+                    onChange={(e) => setForm({ ...form, anonymous: e.target.checked, name: "" })}
+                    className="accent-[#1e3a5f]"
+                  />
                   Stay anonymous
                 </label>
               </div>
@@ -370,15 +486,27 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
             {/* Neighborhood + Theme */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm mb-1">Neighborhood</label>
-                <select value={form.neighborhood} onChange={(e) => setForm({ ...form, neighborhood: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30">
+                <label htmlFor="story-neighborhood" className="block text-sm mb-1">Neighborhood</label>
+                <select
+                  id="story-neighborhood"
+                  title="Neighborhood"
+                  value={form.neighborhood}
+                  onChange={(e) => setForm({ ...form, neighborhood: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
+                >
                   <option value="">Select...</option>
                   {neighborhoods.map((n) => <option key={n.name} value={n.name}>{n.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm mb-1">Theme</label>
-                <select value={form.theme} onChange={(e) => setForm({ ...form, theme: e.target.value })} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30">
+                <label htmlFor="story-theme" className="block text-sm mb-1">Theme</label>
+                <select
+                  id="story-theme"
+                  title="Theme"
+                  value={form.theme}
+                  onChange={(e) => setForm({ ...form, theme: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
+                >
                   <option value="">Select...</option>
                   {themes.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -387,8 +515,9 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
 
             {/* Title */}
             <div>
-              <label className="block text-sm mb-1">Story Title</label>
+              <label htmlFor="story-title" className="block text-sm mb-1">Story Title</label>
               <input
+                id="story-title"
                 type="text"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -400,15 +529,17 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
             {/* Story — mode toggle */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm">Your Story</label>
+                <span className="text-sm">Your Story</span>
                 <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
                   <button
+                    type="button"
                     onClick={() => { setStoryMode("text"); if (isRecordingStory) stopStoryRec(); }}
                     className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${storyMode === "text" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
                   >
                     <FileText className="w-3 h-3" /> Type
                   </button>
                   <button
+                    type="button"
                     onClick={() => setStoryMode("voice")}
                     className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${storyMode === "voice" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
                   >
@@ -421,6 +552,8 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 <>
                   <p className="text-xs text-gray-500 mb-2">What do you remember about your neighborhood? What has changed? What should never be forgotten?</p>
                   <textarea
+                    id="story-text"
+                    title="Your story"
                     value={form.story}
                     onChange={(e) => setForm({ ...form, story: e.target.value })}
                     rows={6}
@@ -431,11 +564,11 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               ) : (
                 <div className="space-y-3">
                   <p className="text-xs text-gray-500">Speak your story — it will be transcribed live. Click Stop when finished.</p>
-
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-3 flex-wrap">
                       {!isRecordingStory ? (
                         <button
+                          type="button"
                           onClick={startStoryRec}
                           className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
                         >
@@ -443,6 +576,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                         </button>
                       ) : (
                         <button
+                          type="button"
                           onClick={stopStoryRec}
                           className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors text-sm"
                         >
@@ -460,20 +594,18 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                         </span>
                       )}
                     </div>
-
-                    {/* Live transcript display */}
                     {(isRecordingStory || liveTranscript) && (
                       <div className="border border-gray-200 rounded-lg bg-white p-3 min-h-[72px] text-sm text-gray-700 leading-relaxed">
                         {liveTranscript || <span className="text-gray-400 italic">Listening…</span>}
                       </div>
                     )}
                   </div>
-
-                  {/* Editable transcript */}
                   {form.story && (
                     <div>
-                      <p className="text-xs text-gray-500 mb-1">Review and edit transcript if needed:</p>
+                      <label htmlFor="story-transcript" className="text-xs text-gray-500 mb-1 block">Review and edit transcript if needed:</label>
                       <textarea
+                        id="story-transcript"
+                        title="Story transcript"
                         value={form.story}
                         onChange={(e) => setForm({ ...form, story: e.target.value })}
                         rows={4}
@@ -485,9 +617,93 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               )}
             </div>
 
+            {/* ── Media Upload ── */}
+            <div>
+              <label htmlFor="media-upload" className="block text-sm mb-1">
+                Attach Photos, Audio, or Video
+                <span className="ml-2 text-xs text-gray-400">(optional — up to {MAX_FILES} files, 100 MB each)</span>
+              </label>
+
+              <input
+                ref={fileInputRef}
+                id="media-upload"
+                type="file"
+                accept={ACCEPTED}
+                multiple
+                title="Upload media files"
+                className="hidden"
+                onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }}
+              />
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="Upload media files — click or drag and drop"
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
+                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${dragOver ? "border-[#1e3a5f] bg-blue-50" : "border-gray-300 hover:border-gray-400 bg-gray-50"}`}
+              >
+                <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-600">Drag and drop files here, or <span className="text-[#1e3a5f] underline">click to browse</span></p>
+                <p className="text-xs text-gray-400 mt-1">Images, audio files, and videos accepted</p>
+              </div>
+
+              {fileError && (
+                <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> {fileError}
+                </p>
+              )}
+
+              {mediaFiles.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {mediaFiles.map((mf, idx) => (
+                    <div key={idx} className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg p-2">
+                      {mf.type === "image" && (
+                        <img src={mf.preview} alt={mf.file.name} className="w-12 h-12 object-cover rounded-md shrink-0" />
+                      )}
+                      {mf.type === "audio" && (
+                        <div className="w-12 h-12 bg-blue-50 rounded-md flex items-center justify-center shrink-0">
+                          <Music className="w-5 h-5 text-blue-500" />
+                        </div>
+                      )}
+                      {mf.type === "video" && (
+                        <div className="w-12 h-12 bg-purple-50 rounded-md flex items-center justify-center shrink-0">
+                          <Video className="w-5 h-5 text-purple-500" />
+                        </div>
+                      )}
+
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate">{mf.file.name}</p>
+                        <p className="text-xs text-gray-400">{(mf.file.size / 1024 / 1024).toFixed(1)} MB · {mf.type}</p>
+                        {mf.type === "audio" && (
+                          <audio src={mf.preview} controls className="mt-1 h-7 w-full" />
+                        )}
+                        {mf.type === "video" && (
+                          <video src={mf.preview} controls className="mt-1 w-full max-h-24 rounded" />
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => removeFile(idx)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors shrink-0"
+                        title={`Remove ${mf.file.name}`}
+                        aria-label={`Remove ${mf.file.name}`}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-between">
-              <button onClick={() => setCurrentStep(0)} className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Back</button>
+              <button type="button" onClick={() => setCurrentStep(0)} className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Back</button>
               <button
+                type="button"
                 disabled={!canProceedFromStory}
                 onClick={() => setCurrentStep(2)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#1e3a5f] text-white rounded-lg disabled:opacity-40 hover:bg-[#162d4a] transition-colors"
@@ -501,7 +717,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
         {/* ── STEP 2: REVIEW ── */}
         {currentStep === 2 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-5">
-            <h2 style={{ fontFamily: "'Playfair Display', serif" }}>Review Your Submission</h2>
+            <h2 style={playfair}>Review Your Submission</h2>
 
             <div className="space-y-3 text-sm">
               {[
@@ -519,10 +735,25 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 <span className="text-gray-500">Title</span>
                 <p className="mt-1">{form.title}</p>
               </div>
-              <div className="py-2">
+              <div className="py-2 border-b border-gray-100">
                 <span className="text-gray-500">Story</span>
                 <p className="mt-1 text-gray-700 leading-relaxed">{form.story}</p>
               </div>
+              {mediaFiles.length > 0 && (
+                <div className="py-2">
+                  <span className="text-gray-500">Attached Files</span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {mediaFiles.map((mf, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-xs bg-gray-100 rounded-full px-3 py-1">
+                        {mf.type === "image" && <ImageIcon className="w-3 h-3" />}
+                        {mf.type === "audio" && <Music className="w-3 h-3" />}
+                        {mf.type === "video" && <Video className="w-3 h-3" />}
+                        <span className="truncate max-w-[120px]">{mf.file.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start gap-2">
@@ -539,13 +770,31 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               </p>
             </div>
 
+            {submitError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 shrink-0" />
+                <p className="text-xs text-red-700">{submitError}</p>
+              </div>
+            )}
+
             <div className="flex justify-between">
-              <button onClick={() => setCurrentStep(1)} className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Back</button>
               <button
-                onClick={() => setSubmitted(true)}
-                className="px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                type="button"
+                disabled={submitting}
+                onClick={() => setCurrentStep(1)}
+                className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
               >
-                Submit Your Story
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleSubmit}
+                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
+              >
+                {submitting
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
+                  : "Submit Your Story"}
               </button>
             </div>
           </div>
