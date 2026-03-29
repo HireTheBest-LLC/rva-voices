@@ -71,6 +71,27 @@ Si usted tiene menos de 18 años, por favor no envíe su historia sin el permiso
 
 const steps = ["Consent", "Your Story", "Review"];
 
+/**
+ * Guided story prompts (Gap #16 — Shape D acceptance criterion: 3–5 prompt options).
+ * Bilingual: clicking a prompt chip pre-fills the story textarea so storytellers
+ * have a starting point rather than a blank page.
+ */
+const GUIDED_PROMPTS_EN = [
+  "Tell us about a place in your neighborhood that is gone but you miss.",
+  "What was your neighborhood like when you were growing up?",
+  "When did you feel Richmond changing around you?",
+  "What does your community do that the City doesn't know about?",
+  "What do you want future Richmonders to know about where you live?",
+];
+
+const GUIDED_PROMPTS_ES = [
+  "Cuéntenos sobre un lugar de su vecindario que ya no existe pero que extraña.",
+  "¿Cómo era su vecindario cuando usted estaba creciendo?",
+  "¿Cuándo sintió que Richmond estaba cambiando a su alrededor?",
+  "¿Qué hace su comunidad que la Ciudad no sabe?",
+  "¿Qué quiere que los futuros residentes de Richmond sepan sobre el lugar donde vive?",
+];
+
 const ACCEPTED = "image/*,audio/*,video/*";
 const MAX_FILES = 5;
 const MAX_BYTES = 100 * 1024 * 1024;
@@ -97,9 +118,16 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const [submitError, setSubmitError] = useState("");
   const [lang, setLang] = useState<"en" | "es">("en");
   const consent = lang === "en" ? CONSENT_EN : CONSENT_ES;
+  const guidedPrompts = lang === "en" ? GUIDED_PROMPTS_EN : GUIDED_PROMPTS_ES;
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [consentRecorded, setConsentRecorded] = useState(false);
+  /**
+   * Gap #21 — Age gate.
+   * COPPA / G2 require confirming the submitter is 18+ (or has parental consent).
+   * Blocks progression from Step 0 until checked.
+   */
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [isRecordingConsent, setIsRecordingConsent] = useState(false);
   const [consentTime, setConsentTime] = useState(0);
   const consentBlobRef = useRef<Blob | null>(null);
@@ -127,6 +155,13 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
     neighborhood: "", theme: "",
     title: "", story: "",
     lat: 0, lng: 0, address: "",
+    /**
+     * Gap #18 — Visibility preference.
+     * Consent text promises stories are shown publicly only with permission.
+     * This field captures that choice so the backend can store and honor it.
+     * Default: "private" (opt-in to public, not opt-out).
+     */
+    visibility: "private" as "private" | "public",
   });
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -139,6 +174,8 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
     form.title && form.story && form.neighborhood && form.theme &&
     (form.name || form.anonymous) && hasLocation
   );
+  // Age gate must be confirmed before leaving Step 0 (Gap #21)
+  const canProceedFromConsent = consentRecorded && ageConfirmed;
 
   // When neighborhood changes, auto-update lat/lng from the neighborhoods list
   const handleNeighborhoodChange = useCallback((name: string) => {
@@ -356,6 +393,8 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       fd.append("lat", String(form.lat));
       fd.append("lng", String(form.lng));
       fd.append("address", form.address);
+      // Gap #18: pass submitter's public/private choice to backend
+      fd.append("visibility", form.visibility);
 
       if (consentBlobRef.current) {
         fd.append("consent_audio", consentBlobRef.current, "consent.webm");
@@ -504,10 +543,26 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               )}
             </div>
 
+            {/* Gap #21 — Age gate: COPPA + G2 require confirming 18+ before proceeding */}
+            <label className="flex items-start gap-3 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={ageConfirmed}
+                onChange={(e) => setAgeConfirmed(e.target.checked)}
+                className="mt-0.5 accent-[#1e3a5f] shrink-0"
+                aria-label="Age confirmation"
+              />
+              <span className="text-sm text-gray-700">
+                {lang === "en"
+                  ? "I confirm I am 18 years of age or older, or I have a parent or guardian's permission to submit this story."
+                  : "Confirmo que tengo 18 años o más, o que cuento con el permiso de un padre o tutor para enviar esta historia."}
+              </span>
+            </label>
+
             <div className="flex justify-end">
               <button
                 type="button"
-                disabled={!consentRecorded}
+                disabled={!canProceedFromConsent}
                 onClick={() => setCurrentStep(1)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#1e3a5f] text-white rounded-lg disabled:opacity-40 hover:bg-[#162d4a] transition-colors"
               >
@@ -705,16 +760,43 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
 
               {storyMode === "text" ? (
                 <>
-                  <p className="text-xs text-gray-500 mb-2">What do you remember about your neighborhood? What has changed? What should never be forgotten?</p>
+                  {/* Gap #16 — Guided prompts (Shape D: 3–5 prompt options required).
+                      Clicking a chip pre-fills the textarea so storytellers aren't
+                      faced with a blank page. */}
+                  <div className="mb-3">
+                    <p className="text-xs text-gray-500 mb-2">
+                      {lang === "en"
+                        ? "Not sure where to start? Choose a prompt:"
+                        : "¿No sabe por dónde empezar? Elija un tema:"}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {guidedPrompts.map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          onClick={() => setForm(f => ({ ...f, story: prompt + " " }))}
+                          className="text-xs px-3 py-1.5 rounded-full border border-[#1e3a5f]/30 text-[#1e3a5f] hover:bg-[#1e3a5f] hover:text-white transition-colors bg-white"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <textarea
                     id="story-text"
                     title="Your story"
                     value={form.story}
                     onChange={(e) => setForm({ ...form, story: e.target.value })}
                     rows={6}
-                    placeholder="Share your story here..."
+                    placeholder={lang === "en" ? "Share your story here..." : "Comparta su historia aquí..."}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 resize-none"
                   />
+                  {/* Gap #19 — Third-party PII warning (G2 blueprint requirement) */}
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    {lang === "en"
+                      ? "Please do not include other people's full names, home addresses, or private details in your story."
+                      : "Por favor, no incluya nombres completos, direcciones ni datos privados de otras personas en su historia."}
+                  </p>
                 </>
               ) : (
                 <div className="space-y-3">
@@ -855,6 +937,45 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               )}
             </div>
 
+            {/* Gap #18 — Visibility preference.
+                Consent text says stories are public "only if you say it is okay."
+                This radio group captures that choice explicitly (default: private). */}
+            <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-2">
+              <p className="text-sm font-medium text-gray-700">
+                {lang === "en" ? "Who can see your story?" : "¿Quién puede ver su historia?"}
+              </p>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="private"
+                  checked={form.visibility === "private"}
+                  onChange={() => setForm(f => ({ ...f, visibility: "private" }))}
+                  className="mt-0.5 accent-[#1e3a5f]"
+                />
+                <span className="text-sm text-gray-700">
+                  {lang === "en"
+                    ? "City staff only — keep my story private"
+                    : "Solo personal de la Ciudad — mantener mi historia privada"}
+                </span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="public"
+                  checked={form.visibility === "public"}
+                  onChange={() => setForm(f => ({ ...f, visibility: "public" }))}
+                  className="mt-0.5 accent-[#1e3a5f]"
+                />
+                <span className="text-sm text-gray-700">
+                  {lang === "en"
+                    ? "Share publicly on the RVA Legacy Map"
+                    : "Compartir públicamente en el Mapa RVA Legacy"}
+                </span>
+              </label>
+            </div>
+
             <div className="flex justify-between">
               <button type="button" onClick={() => setCurrentStep(0)} className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Back</button>
               <button
@@ -881,6 +1002,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 { label: "Map Pin", value: form.address ? `${form.address} (${form.lat.toFixed(4)}, ${form.lng.toFixed(4)})` : `${form.neighborhood} area center` },
                 { label: "Theme", value: form.theme },
                 { label: "Story Type", value: storyBlob ? "Voice recording + transcript" : "Text" },
+                { label: "Visibility", value: form.visibility === "public" ? "Public — shown on RVA Legacy Map" : "Private — City staff only" },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500">{label}</span>

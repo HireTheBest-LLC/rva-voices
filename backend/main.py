@@ -77,6 +77,8 @@ async def submit_story(
     lat: str = Form(""),
     lng: str = Form(""),
     address: str = Form(""),
+    # Gap #18: submitter's public/private visibility preference
+    visibility: str = Form("private"),
     consent_audio: Optional[UploadFile] = File(None),
     story_audio: Optional[UploadFile] = File(None),
     media_files: list[UploadFile] = File(default=[]),
@@ -142,6 +144,8 @@ async def submit_story(
         "image_url": image_url,
         "audio_url": audio_url,
         "files": saved_files,
+        # "private" = City staff only; "public" = shown on the map
+        "visibility": visibility if visibility in ("public", "private") else "private",
         "status": "pending_review",
     }
 
@@ -160,6 +164,10 @@ def get_stories():
     for s in submissions:
         # Skip if no valid coordinates
         if s.get("lat") is None or s.get("lng") is None:
+            continue
+        # Respect submitter's visibility preference (Gap #18)
+        # Only "public" stories appear on the public map
+        if s.get("visibility", "private") != "public":
             continue
         stories.append({
             "id": s["id"],

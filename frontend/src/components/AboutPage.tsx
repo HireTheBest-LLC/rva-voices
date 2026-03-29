@@ -99,7 +99,7 @@ export function AboutPage() {
       <div className="text-center py-4">
         <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
           <Heart className="w-4 h-4 text-red-400" />
-          <span>Built with love for Richmond at <a href="https://rvahacks.org" target="_blank" rel="noopener noreferrer" className="text-[#1e3a5f] underline">Hack for RVA 2026</a></span>
+          <span>Built with love by the Vicktoria AI team for Richmond at <a href="https://rvahacks.org" target="_blank" rel="noopener noreferrer" className="text-[#1e3a5f] underline">Hack for RVA 2026</a></span>
         </div>
       </div>
     </div>
