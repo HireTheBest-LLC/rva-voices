@@ -39,6 +39,7 @@ export default function Home() {
           theme: s.theme,
           date: s.date,
           imageUrl: s.imageUrl ?? undefined,
+          audioUrl: s.audioUrl ?? undefined,
           consentGiven: true,
         }));
         setSubmittedStories(mapped);
@@ -74,9 +75,10 @@ export default function Home() {
                     <Star className="w-4 h-4 fill-white" />
                     <span className="text-sm">Featured Story</span>
                   </div>
-                  <button onClick={() => setFeaturedDismissed(true)} className="text-white/80 hover:text-white text-xs">Dismiss</button>
+                  <button type="button" onClick={() => setFeaturedDismissed(true)} className="text-white/80 hover:text-white text-xs">Dismiss</button>
                 </div>
                 <button
+                  type="button"
                   onClick={() => setSelectedStory(featuredStory)}
                   className="w-full flex items-center gap-3 p-3 hover:bg-amber-50 transition-colors text-left"
                 >
@@ -96,6 +98,7 @@ export default function Home() {
           {/* Filter bar */}
           <div className={`absolute ${featuredStory && !featuredDismissed && !selectedStory ? "top-[120px]" : "top-4"} left-4 z-[1000] flex flex-col gap-2 transition-all`}>
             <button
+              type="button"
               onClick={() => setShowFilters(!showFilters)}
               className="flex items-center gap-2 bg-white px-4 py-2.5 rounded-lg shadow-lg hover:shadow-xl transition-shadow text-sm"
             >
@@ -114,6 +117,7 @@ export default function Home() {
                   <span className="text-sm text-gray-700">Filter Stories</span>
                   {(selectedTheme || selectedNeighborhood) && (
                     <button
+                      type="button"
                       onClick={() => { setSelectedTheme(null); setSelectedNeighborhood(null); }}
                       className="text-xs text-red-500 hover:text-red-700"
                     >
@@ -122,8 +126,10 @@ export default function Home() {
                   )}
                 </div>
 
-                <label className="block text-xs text-gray-500 mb-1">Neighborhood</label>
+                <label htmlFor="filter-neighborhood" className="block text-xs text-gray-500 mb-1">Neighborhood</label>
                 <select
+                  id="filter-neighborhood"
+                  title="Filter by neighborhood"
                   value={selectedNeighborhood || ""}
                   onChange={(e) => setSelectedNeighborhood(e.target.value || null)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm mb-3 bg-gray-50"
@@ -132,8 +138,10 @@ export default function Home() {
                   {neighborhoods.map((n) => <option key={n.name} value={n.name}>{n.name}</option>)}
                 </select>
 
-                <label className="block text-xs text-gray-500 mb-1">Theme</label>
+                <label htmlFor="filter-theme" className="block text-xs text-gray-500 mb-1">Theme</label>
                 <select
+                  id="filter-theme"
+                  title="Filter by theme"
                   value={selectedTheme || ""}
                   onChange={(e) => setSelectedTheme(e.target.value || null)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50"
@@ -169,6 +177,7 @@ export default function Home() {
           {/* Share CTA */}
           <div className={`absolute ${featuredStory && !featuredDismissed && !selectedStory ? "top-[120px]" : "top-4"} right-4 z-[1000] transition-all`}>
             <button
+              type="button"
               onClick={() => setCurrentView("submit")}
               className="flex items-center gap-2 bg-amber-500 text-white px-4 py-2.5 rounded-lg shadow-lg hover:bg-amber-600 transition-colors text-sm"
             >

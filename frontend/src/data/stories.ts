@@ -10,6 +10,7 @@ export interface Story {
   theme: string;
   date: string;
   imageUrl?: string;
+  audioUrl?: string;
   consentGiven: boolean;
   sourceAttribution?: string;
   featured?: boolean;
@@ -43,7 +44,7 @@ export const sampleStories: Story[] = [
     type: "voice",
     theme: "Community Life",
     date: "2026-03-15",
-    imageUrl: "https://images.unsplash.com/photo-1655324330958-8404961d8ebb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxKYWNrc29uJTIwV2FyZCUyMFJpY2htb25kJTIwVmlyZ2luaWElMjBoaXN0b3JpYyUyMG5laWdoYm9yaG9vZHxlbnwxfHx8fDE3NzQ3MjAyODN8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
+    imageUrl: "https://images.unsplash.com/photo-1655324330958-8404961d8ebb?w=1080&q=80&auto=format",
     consentGiven: true,
   },
   {
@@ -57,7 +58,7 @@ export const sampleStories: Story[] = [
     type: "voice",
     theme: "Displacement & Change",
     date: "2026-03-10",
-    imageUrl: "https://images.unsplash.com/photo-1578680142744-5884c3d7f350?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxoaXN0b3JpYyUyMEFmcmljYW4lMjBBbWVyaWNhbiUyMG5laWdoYm9yaG9vZCUyMGNvbW11bml0eXxlbnwxfHx8fDE3NzQ3MjAyODd8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
+    imageUrl: "https://images.unsplash.com/photo-1578680142744-5884c3d7f350?w=1080&q=80&auto=format",
     consentGiven: true,
     sourceAttribution: "Inspired by Historic Fulton Oral History Project — VCU Libraries (copyright The Valentine)",
   },
@@ -72,7 +73,7 @@ export const sampleStories: Story[] = [
     type: "photo",
     theme: "Family Heritage",
     date: "2026-03-12",
-    imageUrl: "https://images.unsplash.com/photo-1616970463449-12b603a61622?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxDaHVyY2glMjBIaWxsJTIwUmljaG1vbmQlMjBWaXJnaW5pYSUyMGhpc3RvcmljfGVufDF8fHx8MTc3NDcyMDI4NHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
+    imageUrl: "https://images.unsplash.com/photo-1616970463449-12b603a61622?w=1080&q=80&auto=format",
     consentGiven: true,
   },
   {
@@ -100,6 +101,7 @@ export const sampleStories: Story[] = [
     type: "photo",
     theme: "Resilience",
     date: "2026-02-28",
+    imageUrl: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=1080&q=80&auto=format",
     consentGiven: true,
   },
   {
@@ -113,7 +115,7 @@ export const sampleStories: Story[] = [
     type: "voice",
     theme: "Arts & Culture",
     date: "2026-03-20",
-    imageUrl: "https://images.unsplash.com/photo-1555069855-e580a9adbf43?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxkaXZlcnNlJTIwY29tbXVuaXR5JTIwZ2F0aGVyaW5nJTIwc3Rvcnl0ZWxsaW5nfGVufDF8fHx8MTc3NDcyMDI4NHww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
+    imageUrl: "https://images.unsplash.com/photo-1555069855-e580a9adbf43?w=1080&q=80&auto=format",
     consentGiven: true,
   },
   {
@@ -127,6 +129,7 @@ export const sampleStories: Story[] = [
     type: "photo",
     theme: "Family Heritage",
     date: "2026-03-18",
+    imageUrl: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=1080&q=80&auto=format",
     consentGiven: true,
   },
   {

@@ -112,6 +112,12 @@ async def submit_story(
         None,
     )
 
+    # Story audio URL for the voice player
+    audio_url = next(
+        (f["url"] for f in saved_files if f.get("role") == "story_audio"),
+        None,
+    )
+
     try:
         lat_val = float(lat) if lat else None
         lng_val = float(lng) if lng else None
@@ -134,6 +140,7 @@ async def submit_story(
         "address": address,
         "story_type": story_type,
         "image_url": image_url,
+        "audio_url": audio_url,
         "files": saved_files,
         "status": "pending_review",
     }
@@ -167,6 +174,7 @@ def get_stories():
             "theme": s["theme"],
             "date": s["submitted_at"][:10],
             "imageUrl": s.get("image_url"),
+            "audioUrl": s.get("audio_url"),
             "consentGiven": True,
             "status": s.get("status", "pending_review"),
             "submitted": True,
