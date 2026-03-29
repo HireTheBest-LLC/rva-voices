@@ -161,19 +161,158 @@ export function StoryMap({ stories, selectedTheme, selectedNeighborhood, onStory
   );
 }
 
+// ── Gender detection from author first name ──────────────────────────────────
+// Used to select a gender-appropriate neural voice for the TTS reader.
+// Covers the most common English, Spanish, and African-American names found
+// in Richmond community storytelling contexts.
+const MALE_FIRST_NAMES = new Set([
+  "james","john","robert","michael","william","david","richard","joseph",
+  "thomas","charles","christopher","daniel","matthew","anthony","mark",
+  "donald","steven","paul","andrew","kenneth","george","joshua","kevin",
+  "brian","edward","ronald","timothy","jason","jeffrey","ryan","gary",
+  "jacob","nicholas","eric","jonathan","stephen","larry","scott","frank",
+  "justin","raymond","gregory","samuel","benjamin","patrick","jack","henry",
+  "walter","dennis","jerry","carlos","harold","arthur","peter","roger",
+  "willie","ralph","joe","eugene","wayne","alan","juan","louis","adam",
+  "jesse","harry","albert","fred","clarence","howard","victor","marcus",
+  "tyrone","darius","devonte","malik","jamal","darnell","lamar","terrell",
+  "andre","leon","leroy","clarence","reginald","rodney","earnest","otis",
+]);
+
+const FEMALE_FIRST_NAMES = new Set([
+  "mary","patricia","jennifer","linda","barbara","elizabeth","susan",
+  "jessica","sarah","karen","lisa","nancy","betty","margaret","sandra",
+  "ashley","dorothy","kimberly","emily","donna","michelle","carol",
+  "amanda","melissa","deborah","stephanie","rebecca","sharon","laura",
+  "cynthia","kathleen","amy","angela","shirley","anna","brenda","pamela",
+  "emma","nicole","helen","samantha","katherine","christine","debra",
+  "rachel","carolyn","janet","catherine","maria","heather","diane","julie",
+  "joyce","victoria","vicktoria","ruth","virginia","kelly","lauren",
+  "christina","joan","evelyn","judith","alice","ann","jean","cheryl",
+  "marie","danielle","denise","tammy","grace","teresa","natalie","gloria",
+  "beverly","irene","andrea","louise","frances","diana","aisha","keisha",
+  "latasha","tamika","shanice","monique","destiny","jasmine","imani",
+  "niesha","latoya","shaniqua","tiffany","shonda","lakisha","rochelle",
+]);
+
+type Gender = "male" | "female" | "neutral";
+
+function detectGender(author: string): Gender {
+  // Extract first word, strip punctuation, lowercase
+  const first = author.split(/\s+/)[0].replace(/[^a-z]/gi, "").toLowerCase();
+  if (MALE_FIRST_NAMES.has(first)) return "male";
+  if (FEMALE_FIRST_NAMES.has(first)) return "female";
+  return "neutral";
+}
+
+// ── Neural voice selection ────────────────────────────────────────────────────
+// Priority lists ordered best-to-worst quality per gender.
+// Covers Chrome (Google neural), Edge (Microsoft Online Natural),
+// macOS (Siri/System voices), and Windows SAPI fallbacks.
+const FEMALE_VOICE_PRIORITY = [
+  "Microsoft Aria Online (Natural)",   // Edge — best Windows neural female
+  "Microsoft Ava Online (Natural)",    // Edge alternative
+  "Microsoft Jenny Online (Natural)",
+  "Google US English",                 // Chrome — neural quality, female timbre
+  "Samantha",                          // macOS — highest quality system voice
+  "Karen",                             // macOS Australian
+  "Moira",                             // macOS Irish
+  "Victoria",                          // macOS
+  "Tessa",                             // macOS South African
+  "Microsoft Zira Desktop",            // Windows SAPI
+  "Microsoft Zira",
+];
+
+const MALE_VOICE_PRIORITY = [
+  "Microsoft Guy Online (Natural)",    // Edge — best Windows neural male
+  "Microsoft Andrew Online (Natural)", // Edge alternative
+  "Microsoft Ryan Online (Natural)",
+  "Microsoft Davis Online (Natural)",
+  "Google UK English Male",            // Chrome
+  "Alex",                              // macOS — premium default male
+  "Daniel",                            // macOS British
+  "Tom",                               // macOS
+  "Fred",                              // macOS
+  "Microsoft David Desktop",           // Windows SAPI
+  "Microsoft David",
+];
+
+/**
+ * Returns the highest-quality available SpeechSynthesisVoice for the given
+ * gender. Falls back through progressively looser matches before giving up.
+ *
+ * IMPORTANT: getVoices() is async on first call — always call this after the
+ * voiceschanged event has fired (handled inside VoicePlayer via voicesReady).
+ */
+function selectBestVoice(gender: Gender): SpeechSynthesisVoice | null {
+  if (typeof window === "undefined" || !window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+
+  const priority = gender === "male" ? MALE_VOICE_PRIORITY
+    : gender === "female" ? FEMALE_VOICE_PRIORITY
+    : [...FEMALE_VOICE_PRIORITY, ...MALE_VOICE_PRIORITY];
+
+  // 1. Exact name match
+  for (const name of priority) {
+    const v = voices.find((v) => v.name === name);
+    if (v) return v;
+  }
+
+  // 2. Partial name match (catches locale suffixes like "Aria (United States)")
+  for (const name of priority) {
+    const keyword = name.split(" ")[1] ?? name.split(" ")[0]; // e.g. "Aria", "Guy"
+    const v = voices.find((v) => v.name.includes(keyword) && v.lang.startsWith("en"));
+    if (v) return v;
+  }
+
+  // 3. Gender keyword in voice name (some browsers expose this)
+  const keyword = gender === "female" ? "female" : gender === "male" ? "male" : null;
+  if (keyword) {
+    const v = voices.find((v) =>
+      v.lang.startsWith("en") && v.name.toLowerCase().includes(keyword)
+    );
+    if (v) return v;
+  }
+
+  // 4. Any English voice
+  return voices.find((v) => v.lang === "en-US")
+    ?? voices.find((v) => v.lang.startsWith("en"))
+    ?? null;
+}
+
+/** Speech tuning parameters per gender — adjusted for naturalness */
+function speechParams(gender: Gender) {
+  if (gender === "female") return { rate: 0.87, pitch: 1.08, volume: 1.0 };
+  if (gender === "male")   return { rate: 0.83, pitch: 0.91, volume: 1.0 };
+  return                          { rate: 0.87, pitch: 1.0,  volume: 1.0 };
+}
+
 // ── Audio player for voice stories ──────────────────────────────────────────
 function VoicePlayer({ story }: { story: Story }) {
   const [playing, setPlaying] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [voicesReady, setVoicesReady] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
+  // Load voices — getVoices() is async; voiceschanged fires when ready.
+  // We also call it immediately in case the browser already has them cached.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const onVoicesChanged = () => setVoicesReady(true);
+    if (window.speechSynthesis.getVoices().length > 0) {
+      setVoicesReady(true);
+    } else {
+      window.speechSynthesis.addEventListener("voiceschanged", onVoicesChanged);
+      return () => window.speechSynthesis.removeEventListener("voiceschanged", onVoicesChanged);
+    }
+  }, []);
+
   // Cleanup on unmount or story change
   useEffect(() => {
-    return () => {
-      stopAll();
-    };
+    return () => { stopAll(); };
   }, [story.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopAll = useCallback(() => {
@@ -188,29 +327,31 @@ function VoicePlayer({ story }: { story: Story }) {
   }, []);
 
   const handleToggle = useCallback(() => {
-    if (playing) {
-      stopAll();
-      return;
-    }
+    if (playing) { stopAll(); return; }
 
-    // If there's a real audio URL, use the <audio> element
+    // Real audio file — play directly, no TTS needed
     if (story.audioUrl && audioRef.current) {
       audioRef.current.play().then(() => {
         setPlaying(true);
         timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-      }).catch(() => {
-        setPlaying(false);
-      });
-      audioRef.current.onended = () => { stopAll(); };
+      }).catch(() => setPlaying(false));
+      audioRef.current.onended = () => stopAll();
       return;
     }
 
-    // Fallback: use Web Speech API to read the story excerpt aloud
+    // TTS fallback: gender-matched neural voice reads the story aloud
     if (!window.speechSynthesis) return;
-    const text = `${story.title}. ${story.excerpt}`;
+    const gender = detectGender(story.author);
+    const voice = selectBestVoice(gender);
+    const params = speechParams(gender);
+
+    const text = `${story.title}. By ${story.author}. ${story.excerpt}`;
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "en-US";
-    u.rate = 0.92;
+    u.rate = params.rate;
+    u.pitch = params.pitch;
+    u.volume = params.volume;
+    if (voice) u.voice = voice;
     u.onend = () => stopAll();
     u.onerror = () => stopAll();
     utteranceRef.current = u;
@@ -221,6 +362,8 @@ function VoicePlayer({ story }: { story: Story }) {
   }, [playing, story, stopAll]);
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const gender = detectGender(story.author);
+  const voiceLabel = gender === "male" ? "Male narrator" : gender === "female" ? "Female narrator" : "Narrator";
 
   return (
     <div className="bg-gray-100 rounded-lg p-4 mb-4">
@@ -231,8 +374,9 @@ function VoicePlayer({ story }: { story: Story }) {
         <button
           type="button"
           onClick={handleToggle}
-          aria-label={playing ? "Pause" : "Play story audio"}
-          className="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center hover:bg-red-700 transition-colors shrink-0"
+          disabled={!story.audioUrl && !voicesReady}
+          aria-label={playing ? "Stop story audio" : "Play story audio"}
+          className="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center hover:bg-red-700 transition-colors shrink-0 disabled:opacity-40"
         >
           {playing
             ? <Square className="w-4 h-4 fill-white" />
@@ -249,7 +393,7 @@ function VoicePlayer({ story }: { story: Story }) {
             <p className="text-xs text-gray-500">{playing ? fmt(elapsed) : "0:00"}</p>
             {!story.audioUrl && (
               <p className="text-xs text-gray-400 flex items-center gap-1">
-                <Volume2 className="w-3 h-3" /> Read aloud
+                <Volume2 className="w-3 h-3" /> {voiceLabel}
               </p>
             )}
           </div>
