@@ -26,8 +26,8 @@ export function Header({ currentView, onViewChange }: HeaderProps) {
             <MapPin className="w-5 h-5 text-white" />
           </div>
           <div className="leading-tight">
-            <span className="block text-sm" style={{ fontFamily: "'Playfair Display', serif" }}>RVA Legacy Map</span>
-            <span className="block text-xs text-blue-200">Richmond Stories Project</span>
+            <span className="block text-sm font-semibold" style={{ fontFamily: "'Playfair Display', serif" }}>Richmond Stories</span>
+            <span className="block text-xs text-blue-200">RVA Legacy Map</span>
           </div>
         </button>
 

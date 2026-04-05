@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback, DragEvent } from "react";
 import {
-  Mic, Volume2, VolumeX, CheckCircle, ArrowLeft, ArrowRight,
+  Mic, Volume2, VolumeX, CheckCircle, XCircle, ArrowLeft, ArrowRight,
   Shield, AlertTriangle, Square, FileText, Music, Video,
   Upload, X, Loader2, Image as ImageIcon, MapPin, Search,
 } from "lucide-react";
@@ -69,7 +69,172 @@ Las historias que recopilamos vienen de personas que eligen participar. No repre
 Si usted tiene menos de 18 años, por favor no envíe su historia sin el permiso de un padre o tutor.`,
 };
 
-const steps = ["Consent", "Your Story", "Review"];
+// ── Full UI string translations ───────────────────────────────────────────────
+const UI_EN = {
+  steps: ["Consent", "Your Story", "Review"],
+  backToMap: "Back to Map",
+  pageTitle: "Tell Us Your Story",
+  pageSubtitle: "Share your lived experience to help preserve Richmond's history and inform the city's future.",
+  // Step 0
+  informedConsent: "Informed Consent",
+  continueBtn: "Continue",
+  reRecord: "Re-record",
+  // Step 1
+  yourStory: "Your Story",
+  yourName: "Your Name",
+  namePlaceholder: "First name and last initial",
+  stayAnonymous: "Stay anonymous",
+  neighborhood: "Neighborhood",
+  theme: "Theme",
+  selectOption: "Select...",
+  whereIsStory: "Where is your story set?",
+  richmondArea: "Richmond Area",
+  specificAddress: "Specific Address",
+  pinPlacedAt: (n: string) => `Pin placed at ${n} on the map.`,
+  selectNeighborhoodHint: "Select a neighborhood above — your story pin will be placed at that area's center.",
+  addressLabel: "Enter a Richmond street address, landmark, or intersection:",
+  addressPlaceholder: "e.g. 100 N. 2nd St or Hippodrome Theatre",
+  findBtn: "Find",
+  locationFound: "Location found",
+  noAddressFallback: (n: string) => `If no address is found, your pin will fall back to the ${n} area.`,
+  selectNeighborhoodWarning: "Select a neighborhood to place your story on the map.",
+  geocodeNotFound: "Address not found. Try a different address or use a neighborhood.",
+  geocodeError: "Could not reach geocoding service. Check your connection.",
+  storyTitle: "Story Title",
+  storyTitlePlaceholder: "Give your story a title",
+  yourStoryLabel: "Your Story",
+  typeTab: "Type",
+  voiceTab: "Voice",
+  promptHint: "Not sure where to start? Choose a prompt:",
+  storyPlaceholder: "Share your story here...",
+  piiWarning: "Please do not include other people's full names, home addresses, or private details in your story.",
+  voiceHint: "Speak your story — it will be transcribed live. Click Stop when finished.",
+  startRecording: "Start Recording",
+  stopRecording: (t: string) => `Stop — ${t}`,
+  recordingIndicator: "Recording…",
+  voiceRecorded: "Voice recorded",
+  listeningIndicator: "Listening…",
+  editTranscript: "Review and edit transcript if needed:",
+  attachLabel: "Attach Photos, Audio, or Video",
+  attachHint: (n: number) => `(optional — up to ${n} files, 100 MB each)`,
+  dropHint: "Drag and drop files here, or",
+  dropBrowse: "click to browse",
+  dropTypes: "Images, audio files, and videos accepted",
+  maxFilesError: (n: number) => `Maximum ${n} files allowed.`,
+  fileSizeError: (name: string) => `"${name}" exceeds the 100 MB limit.`,
+  fileTypeError: (name: string) => `"${name}" is not an accepted type (image, audio, or video).`,
+  backBtn: "Back",
+  reviewBtn: "Review",
+  // Step 2
+  reviewTitle: "Review Your Submission",
+  labelName: "Name",
+  labelNeighborhood: "Neighborhood",
+  labelMapPin: "Map Pin",
+  labelTheme: "Theme",
+  labelStoryType: "Story Type",
+  labelVisibility: "Visibility",
+  labelTitle: "Title",
+  labelStory: "Story",
+  labelFiles: "Attached Files",
+  anonymous: "Anonymous",
+  areaCenter: (n: string) => `${n} area center`,
+  storyTypeVoice: "Voice recording + transcript",
+  storyTypeText: "Text",
+  visibilityPublic: "Public — shown on RVA Legacy Map",
+  visibilityPrivate: "Private — City staff only",
+  consentNote: "Spoken consent recorded. You can withdraw your story at any time by emailing hack4rva@aireadyrva.org",
+  aapor: "Illustrative prototype — based on voluntarily submitted stories, not a representative sample of all Richmond residents.",
+  submitBtn: "Submit Story",
+  submittingBtn: "Submitting…",
+  // Success
+  thankYouTitle: "Thank You for Sharing",
+  thankYouBody: "Your story has been submitted for review. Once approved, it will appear on the Richmond Stories Map.",
+  withdrawNote: "You may withdraw your story at any time by emailing hack4rva@aireadyrva.org",
+  returnToMap: "Return to Map",
+};
+
+const UI_ES: typeof UI_EN = {
+  steps: ["Consentimiento", "Su Historia", "Revisión"],
+  backToMap: "Volver al Mapa",
+  pageTitle: "Cuéntenos Su Historia",
+  pageSubtitle: "Comparta su experiencia vivida para ayudar a preservar la historia de Richmond e informar el futuro de la ciudad.",
+  // Step 0
+  informedConsent: "Consentimiento Informado",
+  continueBtn: "Continuar",
+  reRecord: "Volver a grabar",
+  // Step 1
+  yourStory: "Su Historia",
+  yourName: "Su Nombre",
+  namePlaceholder: "Primer nombre e inicial del apellido",
+  stayAnonymous: "Permanecer anónimo",
+  neighborhood: "Vecindario",
+  theme: "Tema",
+  selectOption: "Seleccionar...",
+  whereIsStory: "¿Dónde se desarrolla su historia?",
+  richmondArea: "Área de Richmond",
+  specificAddress: "Dirección Específica",
+  pinPlacedAt: (n: string) => `Pin colocado en ${n} en el mapa.`,
+  selectNeighborhoodHint: "Seleccione un vecindario — el pin de su historia se colocará en el centro de esa área.",
+  addressLabel: "Ingrese una dirección, punto de referencia o intersección en Richmond:",
+  addressPlaceholder: "p.ej. 100 N. 2nd St o Hippodrome Theatre",
+  findBtn: "Buscar",
+  locationFound: "Ubicación encontrada",
+  noAddressFallback: (n: string) => `Si no se encuentra la dirección, el pin usará el centro del área de ${n}.`,
+  selectNeighborhoodWarning: "Seleccione un vecindario para colocar su historia en el mapa.",
+  geocodeNotFound: "Dirección no encontrada. Intente una dirección diferente o use un vecindario.",
+  geocodeError: "No se pudo conectar al servicio de geolocalización. Verifique su conexión.",
+  storyTitle: "Título de la Historia",
+  storyTitlePlaceholder: "Dé un título a su historia",
+  yourStoryLabel: "Su Historia",
+  typeTab: "Escribir",
+  voiceTab: "Voz",
+  promptHint: "¿No sabe por dónde empezar? Elija un tema:",
+  storyPlaceholder: "Comparta su historia aquí...",
+  piiWarning: "Por favor, no incluya nombres completos, direcciones ni datos privados de otras personas en su historia.",
+  voiceHint: "Hable su historia — se transcribirá en vivo. Haga clic en Detener cuando termine.",
+  startRecording: "Iniciar Grabación",
+  stopRecording: (t: string) => `Detener — ${t}`,
+  recordingIndicator: "Grabando…",
+  voiceRecorded: "Voz grabada",
+  listeningIndicator: "Escuchando…",
+  editTranscript: "Revise y edite la transcripción si es necesario:",
+  attachLabel: "Adjuntar Fotos, Audio o Video",
+  attachHint: (n: number) => `(opcional — hasta ${n} archivos, 100 MB cada uno)`,
+  dropHint: "Arrastre y suelte archivos aquí, o",
+  dropBrowse: "haga clic para explorar",
+  dropTypes: "Se aceptan imágenes, archivos de audio y videos",
+  maxFilesError: (n: number) => `Máximo ${n} archivos permitidos.`,
+  fileSizeError: (name: string) => `"${name}" supera el límite de 100 MB.`,
+  fileTypeError: (name: string) => `"${name}" no es un tipo aceptado (imagen, audio o video).`,
+  backBtn: "Atrás",
+  reviewBtn: "Revisar",
+  // Step 2
+  reviewTitle: "Revise Su Envío",
+  labelName: "Nombre",
+  labelNeighborhood: "Vecindario",
+  labelMapPin: "Pin en el Mapa",
+  labelTheme: "Tema",
+  labelStoryType: "Tipo de Historia",
+  labelVisibility: "Visibilidad",
+  labelTitle: "Título",
+  labelStory: "Historia",
+  labelFiles: "Archivos Adjuntos",
+  anonymous: "Anónimo",
+  areaCenter: (n: string) => `Centro del área de ${n}`,
+  storyTypeVoice: "Grabación de voz + transcripción",
+  storyTypeText: "Texto",
+  visibilityPublic: "Público — visible en el Mapa RVA Legacy",
+  visibilityPrivate: "Privado — solo personal de la Ciudad",
+  consentNote: "Consentimiento verbal grabado. Puede retirar su historia en cualquier momento enviando un correo a hack4rva@aireadyrva.org",
+  aapor: "Prototipo ilustrativo — basado en historias enviadas voluntariamente, no es una muestra representativa de todos los residentes de Richmond.",
+  submitBtn: "Enviar Historia",
+  submittingBtn: "Enviando…",
+  // Success
+  thankYouTitle: "Gracias por Compartir",
+  thankYouBody: "Su historia ha sido enviada para revisión. Una vez aprobada, aparecerá en el Mapa de Historias de Richmond.",
+  withdrawNote: "Puede retirar su historia en cualquier momento enviando un correo a hack4rva@aireadyrva.org",
+  returnToMap: "Volver al Mapa",
+};
 
 /**
  * Guided story prompts (Gap #16 — Shape D acceptance criterion: 3–5 prompt options).
@@ -118,6 +283,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const [submitError, setSubmitError] = useState("");
   const [lang, setLang] = useState<"en" | "es">("en");
   const consent = lang === "en" ? CONSENT_EN : CONSENT_ES;
+  const ui = lang === "en" ? UI_EN : UI_ES;
   const guidedPrompts = lang === "en" ? GUIDED_PROMPTS_EN : GUIDED_PROMPTS_ES;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -130,7 +296,9 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [isRecordingConsent, setIsRecordingConsent] = useState(false);
   const [consentTime, setConsentTime] = useState(0);
+  const [consentError, setConsentError] = useState("");
   const consentBlobRef = useRef<Blob | null>(null);
+  const consentTranscriptRef = useRef("");
 
   const [storyMode, setStoryMode] = useState<"text" | "voice">("text");
   const [isRecordingStory, setIsRecordingStory] = useState(false);
@@ -189,6 +357,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
     }
   }, [locationMode]);
 
+
   // When switching to neighborhood mode, re-resolve from current selection
   const switchToNeighborhoodMode = useCallback(() => {
     setLocationMode("neighborhood");
@@ -214,7 +383,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       const res = await fetch(url, { headers: { "Accept-Language": "en" } });
       const data = await res.json();
       if (!data.length) {
-        setGeocodeError("Address not found. Try a different address or use a neighborhood.");
+        setGeocodeError(ui.geocodeNotFound);
         return;
       }
       const { lat, lon, display_name } = data[0];
@@ -223,7 +392,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       setGeocodeResult({ lat: latN, lng: lngN, display: display_name });
       setForm(f => ({ ...f, lat: latN, lng: lngN, address: q }));
     } catch {
-      setGeocodeError("Could not reach geocoding service. Check your connection.");
+      setGeocodeError(ui.geocodeError);
     } finally {
       setGeocoding(false);
     }
@@ -266,10 +435,10 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const rec = new MediaRecorder(stream);
       chunksRef.current = [];
+      consentTranscriptRef.current = "";
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = () => {
-        consentBlobRef.current = new Blob(chunksRef.current, { type: "audio/webm" });
-        setConsentRecorded(true);
+        // Stop the mic stream and timer; blob is built after recognition ends.
         stream.getTracks().forEach(t => t.stop());
         if (timerRef.current) clearInterval(timerRef.current);
       };
@@ -277,13 +446,71 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       recorderRef.current = rec;
       setIsRecordingConsent(true);
       setConsentTime(0);
+      setConsentError("");
       timerRef.current = setInterval(() => setConsentTime(t => t + 1), 1000);
       window.speechSynthesis?.cancel();
       setIsPlaying(false);
+
+      // Run SpeechRecognition in parallel to capture what the user says.
+      // Validation is deferred to recognition.onend so all results are available.
+      const SpeechRecognition = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        recognition.lang = lang === "en" ? "en-US" : "es-ES";
+        recognition.onresult = (event: any) => {
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              consentTranscriptRef.current += event.results[i][0].transcript + " ";
+            }
+          }
+        };
+        // onend fires AFTER all onresult callbacks — safe to validate here.
+        recognition.onend = () => {
+          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+          const transcript = consentTranscriptRef.current.toLowerCase().trim();
+          const REJECTION_WORDS = [
+            "no", "nope", "i do not", "i don't", "i dont", "i do not consent",
+            "refuse", "disagree", "i do not agree", "i don't agree",
+            "no acepto", "no estoy de acuerdo", "me niego", "no doy",
+          ];
+          const AGREEMENT_WORDS = [
+            "i agree", "i do agree", "i consent", "i have listened", "i understand",
+            "agree", "yes", "acepto", "sí", "si", "de acuerdo", "estoy de acuerdo",
+          ];
+          const rejected = REJECTION_WORDS.some(w => transcript.includes(w));
+          const agreed   = AGREEMENT_WORDS.some(w => transcript.includes(w));
+
+          if (rejected || !agreed) {
+            consentBlobRef.current = null;
+            setConsentRecorded(false);
+            setConsentError(
+              lang === "en"
+                ? "Consent not detected. Please re-record and clearly say the consent phrase to continue."
+                : "No se detectó consentimiento. Por favor vuelva a grabar y diga claramente la frase de consentimiento para continuar."
+            );
+          } else {
+            consentBlobRef.current = blob;
+            setConsentRecorded(true);
+            setConsentError("");
+          }
+        };
+        recognition.start();
+        // Stop recognition when recorder stops; onend fires automatically after.
+        recorderRef.current.addEventListener("stop", () => recognition.stop(), { once: true });
+      } else {
+        // SpeechRecognition unavailable — accept the recording without transcript check.
+        recorderRef.current.addEventListener("stop", () => {
+          consentBlobRef.current = new Blob(chunksRef.current, { type: "audio/webm" });
+          setConsentRecorded(true);
+          setConsentError("");
+        }, { once: true });
+      }
     } catch {
       alert("Microphone access is required to record consent. Please allow microphone access and try again.");
     }
-  }, []);
+  }, [lang]);
 
   const stopConsentRec = useCallback(() => {
     recorderRef.current?.stop();
@@ -347,16 +574,16 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
 
     for (const f of arr) {
       if (mediaFiles.length + next.length >= MAX_FILES) {
-        setFileError(`Maximum ${MAX_FILES} files allowed.`);
+        setFileError(ui.maxFilesError(MAX_FILES));
         break;
       }
       if (f.size > MAX_BYTES) {
-        setFileError(`"${f.name}" exceeds the 100 MB limit.`);
+        setFileError(ui.fileSizeError(f.name));
         continue;
       }
       const mtype = mediaType(f);
       if (mtype === "other") {
-        setFileError(`"${f.name}" is not an accepted type (image, audio, or video).`);
+        setFileError(ui.fileTypeError(f.name));
         continue;
       }
       next.push({ file: f, preview: URL.createObjectURL(f), type: mtype });
@@ -428,15 +655,11 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="w-10 h-10 text-green-600" />
           </div>
-          <h1 style={playfair}>Thank You for Sharing</h1>
-          <p className="text-gray-600 mt-3 mb-6">
-            Your story has been submitted for review. Once approved, it will appear on the Richmond Stories Map.
-          </p>
-          <p className="text-sm text-gray-500 mb-6">
-            You may withdraw your story at any time by emailing hack4rva@aireadyrva.org
-          </p>
+          <h1 style={playfair}>{ui.thankYouTitle}</h1>
+          <p className="text-gray-600 mt-3 mb-6">{ui.thankYouBody}</p>
+          <p className="text-sm text-gray-500 mb-6">{ui.withdrawNote}</p>
           <button type="button" onClick={onBack} className="px-6 py-3 bg-[#1e3a5f] text-white rounded-lg hover:bg-[#162d4a] transition-colors">
-            Return to Map
+            {ui.returnToMap}
           </button>
         </div>
       </div>
@@ -447,27 +670,27 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <div className="max-w-2xl mx-auto p-6">
         <button type="button" onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Back to Map
+          <ArrowLeft className="w-4 h-4" /> {ui.backToMap}
         </button>
 
         <div className="flex items-center justify-between mb-2">
-          <h1 style={playfair}>Tell Us Your Story</h1>
+          <h1 style={playfair}>{ui.pageTitle}</h1>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
             <button type="button" onClick={() => setLang("en")} className={`px-3 py-1.5 transition-colors ${lang === "en" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}>EN</button>
             <button type="button" onClick={() => setLang("es")} className={`px-3 py-1.5 transition-colors ${lang === "es" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}>ES</button>
           </div>
         </div>
-        <p className="text-gray-600 mb-8">Share your lived experience to help preserve Richmond's history and inform the city's future.</p>
+        <p className="text-gray-600 mb-8">{ui.pageSubtitle}</p>
 
         {/* Progress bar */}
         <div className="flex items-center gap-2 mb-8">
-          {steps.map((step, i) => (
+          {ui.steps.map((step, i) => (
             <div key={step} className="flex items-center gap-2 flex-1">
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 transition-colors ${i <= currentStep ? "bg-[#1e3a5f] text-white" : "bg-gray-200 text-gray-500"}`}>
                 {i + 1}
               </div>
               <span className={`text-sm hidden sm:block ${i <= currentStep ? "text-[#1e3a5f]" : "text-gray-400"}`}>{step}</span>
-              {i < steps.length - 1 && <div className={`h-0.5 flex-1 ${i < currentStep ? "bg-[#1e3a5f]" : "bg-gray-200"}`} />}
+              {i < ui.steps.length - 1 && <div className={`h-0.5 flex-1 ${i < currentStep ? "bg-[#1e3a5f]" : "bg-gray-200"}`} />}
             </div>
           ))}
         </div>
@@ -477,7 +700,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-5">
             <div className="flex items-center gap-3">
               <Shield className="w-6 h-6 text-[#1e3a5f] shrink-0" />
-              <h2 style={playfair}>Informed Consent</h2>
+              <h2 style={playfair}>{ui.informedConsent}</h2>
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -534,11 +757,17 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   <span className="text-sm text-green-700">{consent.consentRecorded}</span>
                   <button
                     type="button"
-                    onClick={() => { setConsentRecorded(false); consentBlobRef.current = null; setConsentTime(0); }}
+                    onClick={() => { setConsentRecorded(false); consentBlobRef.current = null; setConsentTime(0); setConsentError(""); consentTranscriptRef.current = ""; }}
                     className="ml-auto text-xs text-gray-400 hover:text-gray-600"
                   >
-                    Re-record
+                    {ui.reRecord}
                   </button>
+                </div>
+              )}
+              {consentError && (
+                <div className="flex items-start gap-2 mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <XCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-700">{consentError}</p>
                 </div>
               )}
             </div>
@@ -555,7 +784,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
               <span className="text-sm text-gray-700">
                 {lang === "en"
                   ? "I confirm I am 18 years of age or older, or I have a parent or guardian's permission to submit this story."
-                  : "Confirmo que tengo 18 años o más, o que cuento con el permiso de un padre o tutor para enviar esta historia."}
+                  : "Confirmo que tengo 18 años o más, o cuento con el permiso de un padre o tutor para enviar esta historia."}
               </span>
             </label>
 
@@ -566,7 +795,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 onClick={() => setCurrentStep(1)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#1e3a5f] text-white rounded-lg disabled:opacity-40 hover:bg-[#162d4a] transition-colors"
               >
-                Continue <ArrowRight className="w-4 h-4" />
+                {ui.continueBtn} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -575,11 +804,11 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
         {/* ── STEP 1: YOUR STORY ── */}
         {currentStep === 1 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-5">
-            <h2 style={playfair}>Your Story</h2>
+            <h2 style={playfair}>{ui.yourStory}</h2>
 
             {/* Name */}
             <div>
-              <label htmlFor="story-name" className="block text-sm mb-1">Your Name</label>
+              <label htmlFor="story-name" className="block text-sm mb-1">{ui.yourName}</label>
               <div className="flex items-center gap-3">
                 <input
                   id="story-name"
@@ -587,7 +816,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value, anonymous: false })}
                   disabled={form.anonymous}
-                  placeholder="First name and last initial"
+                  placeholder={ui.namePlaceholder}
                   className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 disabled:opacity-40"
                 />
                 <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
@@ -597,7 +826,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                     onChange={(e) => setForm({ ...form, anonymous: e.target.checked, name: "" })}
                     className="accent-[#1e3a5f]"
                   />
-                  Stay anonymous
+                  {ui.stayAnonymous}
                 </label>
               </div>
             </div>
@@ -605,28 +834,28 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
             {/* Neighborhood + Theme */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label htmlFor="story-neighborhood" className="block text-sm mb-1">Neighborhood</label>
+                <label htmlFor="story-neighborhood" className="block text-sm mb-1">{ui.neighborhood}</label>
                 <select
                   id="story-neighborhood"
-                  title="Neighborhood"
+                  title={ui.neighborhood}
                   value={form.neighborhood}
                   onChange={(e) => handleNeighborhoodChange(e.target.value)}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
                 >
-                  <option value="">Select...</option>
+                  <option value="">{ui.selectOption}</option>
                   {neighborhoods.map((n) => <option key={n.name} value={n.name}>{n.name}</option>)}
                 </select>
               </div>
               <div>
-                <label htmlFor="story-theme" className="block text-sm mb-1">Theme</label>
+                <label htmlFor="story-theme" className="block text-sm mb-1">{ui.theme}</label>
                 <select
                   id="story-theme"
-                  title="Theme"
+                  title={ui.theme}
                   value={form.theme}
                   onChange={(e) => setForm({ ...form, theme: e.target.value })}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
                 >
-                  <option value="">Select...</option>
+                  <option value="">{ui.selectOption}</option>
                   {themes.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
@@ -636,7 +865,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
             <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
               <div className="flex items-center gap-2">
                 <MapPin className="w-4 h-4 text-[#1e3a5f] shrink-0" />
-                <span className="text-sm font-medium">Where is your story set?</span>
+                <span className="text-sm font-medium">{ui.whereIsStory}</span>
               </div>
 
               {/* Mode toggle */}
@@ -646,14 +875,14 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   onClick={switchToNeighborhoodMode}
                   className={`px-4 py-2 transition-colors ${locationMode === "neighborhood" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
                 >
-                  Richmond Area
+                  {ui.richmondArea}
                 </button>
                 <button
                   type="button"
                   onClick={() => setLocationMode("address")}
                   className={`px-4 py-2 transition-colors ${locationMode === "address" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
                 >
-                  Specific Address
+                  {ui.specificAddress}
                 </button>
               </div>
 
@@ -662,16 +891,16 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   {form.neighborhood && hasLocation ? (
                     <div className="flex items-center gap-2 text-sm text-green-700">
                       <CheckCircle className="w-4 h-4 shrink-0" />
-                      <span>Pin placed at <strong>{form.neighborhood}</strong> on the map.</span>
+                      <span dangerouslySetInnerHTML={{ __html: ui.pinPlacedAt(`<strong>${form.neighborhood}</strong>`) }} />
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500">Select a neighborhood above — your story pin will be placed at that area's center.</p>
+                    <p className="text-sm text-gray-500">{ui.selectNeighborhoodHint}</p>
                   )}
                 </div>
               ) : (
                 <div className="space-y-2">
                   <label htmlFor="location-address" className="block text-xs text-gray-500">
-                    Enter a Richmond street address, landmark, or intersection:
+                    {ui.addressLabel}
                   </label>
                   <div className="flex gap-2">
                     <input
@@ -680,7 +909,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                       value={addressInput}
                       onChange={(e) => { setAddressInput(e.target.value); setGeocodeResult(null); setGeocodeError(""); }}
                       onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); geocodeAddress(); } }}
-                      placeholder="e.g. 100 N. 2nd St or Hippodrome Theatre"
+                      placeholder={ui.addressPlaceholder}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
                     />
                     <button
@@ -690,7 +919,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                       className="flex items-center gap-1.5 px-4 py-2 bg-[#1e3a5f] text-white rounded-lg hover:bg-[#162d4a] transition-colors text-sm disabled:opacity-40"
                     >
                       {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-                      Find
+                      {ui.findBtn}
                     </button>
                   </div>
 
@@ -698,7 +927,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                     <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
                       <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
                       <div>
-                        <p className="font-medium">Location found</p>
+                        <p className="font-medium">{ui.locationFound}</p>
                         <p className="text-xs text-green-600 mt-0.5 leading-snug">{geocodeResult.display}</p>
                       </div>
                     </div>
@@ -711,27 +940,27 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                   )}
 
                   {!geocodeResult && !geocodeError && form.neighborhood && (
-                    <p className="text-xs text-gray-400">If no address is found, your pin will fall back to the {form.neighborhood} area.</p>
+                    <p className="text-xs text-gray-400">{ui.noAddressFallback(form.neighborhood)}</p>
                   )}
                 </div>
               )}
 
               {!hasLocation && form.neighborhood === "" && (
                 <p className="text-xs text-amber-600 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3" /> Select a neighborhood to place your story on the map.
+                  <AlertTriangle className="w-3 h-3" /> {ui.selectNeighborhoodWarning}
                 </p>
               )}
             </div>
 
             {/* Title */}
             <div>
-              <label htmlFor="story-title" className="block text-sm mb-1">Story Title</label>
+              <label htmlFor="story-title" className="block text-sm mb-1">{ui.storyTitle}</label>
               <input
                 id="story-title"
                 type="text"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="Give your story a title"
+                placeholder={ui.storyTitlePlaceholder}
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30"
               />
             </div>
@@ -739,36 +968,29 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
             {/* Story — mode toggle */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm">Your Story</span>
+                <span className="text-sm">{ui.yourStoryLabel}</span>
                 <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
                   <button
                     type="button"
                     onClick={() => { setStoryMode("text"); if (isRecordingStory) stopStoryRec(); }}
                     className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${storyMode === "text" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
                   >
-                    <FileText className="w-3 h-3" /> Type
+                    <FileText className="w-3 h-3" /> {ui.typeTab}
                   </button>
                   <button
                     type="button"
                     onClick={() => setStoryMode("voice")}
                     className={`flex items-center gap-1 px-3 py-1.5 transition-colors ${storyMode === "voice" ? "bg-[#1e3a5f] text-white" : "hover:bg-gray-50"}`}
                   >
-                    <Mic className="w-3 h-3" /> Voice
+                    <Mic className="w-3 h-3" /> {ui.voiceTab}
                   </button>
                 </div>
               </div>
 
               {storyMode === "text" ? (
                 <>
-                  {/* Gap #16 — Guided prompts (Shape D: 3–5 prompt options required).
-                      Clicking a chip pre-fills the textarea so storytellers aren't
-                      faced with a blank page. */}
                   <div className="mb-3">
-                    <p className="text-xs text-gray-500 mb-2">
-                      {lang === "en"
-                        ? "Not sure where to start? Choose a prompt:"
-                        : "¿No sabe por dónde empezar? Elija un tema:"}
-                    </p>
+                    <p className="text-xs text-gray-500 mb-2">{ui.promptHint}</p>
                     <div className="flex flex-wrap gap-2">
                       {guidedPrompts.map((prompt) => (
                         <button
@@ -788,19 +1010,15 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                     value={form.story}
                     onChange={(e) => setForm({ ...form, story: e.target.value })}
                     rows={6}
-                    placeholder={lang === "en" ? "Share your story here..." : "Comparta su historia aquí..."}
+                    placeholder={ui.storyPlaceholder}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/30 resize-none"
                   />
                   {/* Gap #19 — Third-party PII warning (G2 blueprint requirement) */}
-                  <p className="text-xs text-gray-400 mt-1.5">
-                    {lang === "en"
-                      ? "Please do not include other people's full names, home addresses, or private details in your story."
-                      : "Por favor, no incluya nombres completos, direcciones ni datos privados de otras personas en su historia."}
-                  </p>
+                  <p className="text-xs text-gray-400 mt-1.5">{ui.piiWarning}</p>
                 </>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-xs text-gray-500">Speak your story — it will be transcribed live. Click Stop when finished.</p>
+                  <p className="text-xs text-gray-500">{ui.voiceHint}</p>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
                     <div className="flex items-center gap-3 flex-wrap">
                       {!isRecordingStory ? (
@@ -809,7 +1027,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                           onClick={startStoryRec}
                           className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
                         >
-                          <Mic className="w-4 h-4" /> Start Recording
+                          <Mic className="w-4 h-4" /> {ui.startRecording}
                         </button>
                       ) : (
                         <button
@@ -817,29 +1035,29 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                           onClick={stopStoryRec}
                           className="flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors text-sm"
                         >
-                          <Square className="w-3.5 h-3.5 fill-white" /> Stop — {fmt(storyTime)}
+                          <Square className="w-3.5 h-3.5 fill-white" /> {ui.stopRecording(fmt(storyTime))}
                         </button>
                       )}
                       {isRecordingStory && (
                         <span className="flex items-center gap-1.5 text-sm text-red-600">
-                          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> Recording…
+                          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> {ui.recordingIndicator}
                         </span>
                       )}
                       {storyBlob && !isRecordingStory && (
                         <span className="flex items-center gap-1.5 text-sm text-green-600">
-                          <CheckCircle className="w-4 h-4" /> Voice recorded
+                          <CheckCircle className="w-4 h-4" /> {ui.voiceRecorded}
                         </span>
                       )}
                     </div>
                     {(isRecordingStory || liveTranscript) && (
                       <div className="border border-gray-200 rounded-lg bg-white p-3 min-h-[72px] text-sm text-gray-700 leading-relaxed">
-                        {liveTranscript || <span className="text-gray-400 italic">Listening…</span>}
+                        {liveTranscript || <span className="text-gray-400 italic">{ui.listeningIndicator}</span>}
                       </div>
                     )}
                   </div>
                   {form.story && (
                     <div>
-                      <label htmlFor="story-transcript" className="text-xs text-gray-500 mb-1 block">Review and edit transcript if needed:</label>
+                      <label htmlFor="story-transcript" className="text-xs text-gray-500 mb-1 block">{ui.editTranscript}</label>
                       <textarea
                         id="story-transcript"
                         title="Story transcript"
@@ -857,8 +1075,8 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
             {/* ── Media Upload ── */}
             <div>
               <label htmlFor="media-upload" className="block text-sm mb-1">
-                Attach Photos, Audio, or Video
-                <span className="ml-2 text-xs text-gray-400">(optional — up to {MAX_FILES} files, 100 MB each)</span>
+                {ui.attachLabel}
+                <span className="ml-2 text-xs text-gray-400">{ui.attachHint(MAX_FILES)}</span>
               </label>
 
               <input
@@ -883,8 +1101,8 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${dragOver ? "border-[#1e3a5f] bg-blue-50" : "border-gray-300 hover:border-gray-400 bg-gray-50"}`}
               >
                 <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600">Drag and drop files here, or <span className="text-[#1e3a5f] underline">click to browse</span></p>
-                <p className="text-xs text-gray-400 mt-1">Images, audio files, and videos accepted</p>
+                <p className="text-sm text-gray-600">{ui.dropHint} <span className="text-[#1e3a5f] underline">{ui.dropBrowse}</span></p>
+                <p className="text-xs text-gray-400 mt-1">{ui.dropTypes}</p>
               </div>
 
               {fileError && (
@@ -945,46 +1163,24 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 {lang === "en" ? "Who can see your story?" : "¿Quién puede ver su historia?"}
               </p>
               <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="visibility"
-                  value="private"
-                  checked={form.visibility === "private"}
-                  onChange={() => setForm(f => ({ ...f, visibility: "private" }))}
-                  className="mt-0.5 accent-[#1e3a5f]"
-                />
-                <span className="text-sm text-gray-700">
-                  {lang === "en"
-                    ? "City staff only — keep my story private"
-                    : "Solo personal de la Ciudad — mantener mi historia privada"}
-                </span>
+                <input type="radio" name="visibility" value="private" checked={form.visibility === "private"} onChange={() => setForm(f => ({ ...f, visibility: "private" }))} className="mt-0.5 accent-[#1e3a5f]" />
+                <span className="text-sm text-gray-700">{ui.visibilityPrivate}</span>
               </label>
               <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="visibility"
-                  value="public"
-                  checked={form.visibility === "public"}
-                  onChange={() => setForm(f => ({ ...f, visibility: "public" }))}
-                  className="mt-0.5 accent-[#1e3a5f]"
-                />
-                <span className="text-sm text-gray-700">
-                  {lang === "en"
-                    ? "Share publicly on the RVA Legacy Map"
-                    : "Compartir públicamente en el Mapa RVA Legacy"}
-                </span>
+                <input type="radio" name="visibility" value="public" checked={form.visibility === "public"} onChange={() => setForm(f => ({ ...f, visibility: "public" }))} className="mt-0.5 accent-[#1e3a5f]" />
+                <span className="text-sm text-gray-700">{ui.visibilityPublic}</span>
               </label>
             </div>
 
             <div className="flex justify-between">
-              <button type="button" onClick={() => setCurrentStep(0)} className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">Back</button>
+              <button type="button" onClick={() => setCurrentStep(0)} className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">{ui.backBtn}</button>
               <button
                 type="button"
                 disabled={!canProceedFromStory}
                 onClick={() => setCurrentStep(2)}
                 className="flex items-center gap-2 px-5 py-2.5 bg-[#1e3a5f] text-white rounded-lg disabled:opacity-40 hover:bg-[#162d4a] transition-colors"
               >
-                Review <ArrowRight className="w-4 h-4" />
+                {ui.reviewBtn} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </div>
@@ -993,16 +1189,16 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
         {/* ── STEP 2: REVIEW ── */}
         {currentStep === 2 && (
           <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-5">
-            <h2 style={playfair}>Review Your Submission</h2>
+            <h2 style={playfair}>{ui.reviewTitle}</h2>
 
             <div className="space-y-3 text-sm">
               {[
-                { label: "Name", value: form.anonymous ? "Anonymous" : form.name },
-                { label: "Neighborhood", value: form.neighborhood },
-                { label: "Map Pin", value: form.address ? `${form.address} (${form.lat.toFixed(4)}, ${form.lng.toFixed(4)})` : `${form.neighborhood} area center` },
-                { label: "Theme", value: form.theme },
-                { label: "Story Type", value: storyBlob ? "Voice recording + transcript" : "Text" },
-                { label: "Visibility", value: form.visibility === "public" ? "Public — shown on RVA Legacy Map" : "Private — City staff only" },
+                { label: ui.labelName,       value: form.anonymous ? ui.anonymous : form.name },
+                { label: ui.labelNeighborhood, value: form.neighborhood },
+                { label: ui.labelMapPin,     value: form.address ? `${form.address} (${form.lat.toFixed(4)}, ${form.lng.toFixed(4)})` : ui.areaCenter(form.neighborhood) },
+                { label: ui.labelTheme,      value: form.theme },
+                { label: ui.labelStoryType,  value: storyBlob ? ui.storyTypeVoice : ui.storyTypeText },
+                { label: ui.labelVisibility, value: form.visibility === "public" ? ui.visibilityPublic : ui.visibilityPrivate },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between py-2 border-b border-gray-100">
                   <span className="text-gray-500">{label}</span>
@@ -1010,16 +1206,16 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 </div>
               ))}
               <div className="py-2 border-b border-gray-100">
-                <span className="text-gray-500">Title</span>
+                <span className="text-gray-500">{ui.labelTitle}</span>
                 <p className="mt-1">{form.title}</p>
               </div>
               <div className="py-2 border-b border-gray-100">
-                <span className="text-gray-500">Story</span>
+                <span className="text-gray-500">{ui.labelStory}</span>
                 <p className="mt-1 text-gray-700 leading-relaxed">{form.story}</p>
               </div>
               {mediaFiles.length > 0 && (
                 <div className="py-2">
-                  <span className="text-gray-500">Attached Files</span>
+                  <span className="text-gray-500">{ui.labelFiles}</span>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {mediaFiles.map((mf, i) => (
                       <div key={i} className="flex items-center gap-1.5 text-xs bg-gray-100 rounded-full px-3 py-1">
@@ -1036,16 +1232,12 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
 
             <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-start gap-2">
               <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
-              <p className="text-xs text-green-700">
-                Spoken consent recorded. You can withdraw your story at any time by emailing hack4rva@aireadyrva.org
-              </p>
+              <p className="text-xs text-green-700">{ui.consentNote}</p>
             </div>
 
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-              <p className="text-xs text-amber-700">
-                Illustrative prototype — based on voluntarily submitted stories, not a representative sample of all Richmond residents.
-              </p>
+              <p className="text-xs text-amber-700">{ui.aapor}</p>
             </div>
 
             {submitError && (
@@ -1062,7 +1254,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 onClick={() => setCurrentStep(1)}
                 className="px-5 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
               >
-                Back
+                {ui.backBtn}
               </button>
               <button
                 type="button"
@@ -1071,8 +1263,8 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
                 className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-60"
               >
                 {submitting
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
-                  : "Submit Your Story"}
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> {ui.submittingBtn}</>
+                  : ui.submitBtn}
               </button>
             </div>
           </div>

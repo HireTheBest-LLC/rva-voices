@@ -5,10 +5,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Header, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+# Simple token-based admin auth.
+# Set ADMIN_TOKEN env var on EC2; defaults to a dev-only fallback.
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "rva-admin-dev-token")
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -166,8 +170,10 @@ def get_stories():
         if s.get("lat") is None or s.get("lng") is None:
             continue
         # Respect submitter's visibility preference (Gap #18)
-        # Only "public" stories appear on the public map
-        if s.get("visibility", "private") != "public":
+        # Only "public" stories appear on the public map.
+        # Backward compat: submissions before visibility field was added have no
+        # "visibility" key — treat those as "public" (they predate the opt-in).
+        if s.get("visibility", "public") == "private":
             continue
         stories.append({
             "id": s["id"],
@@ -188,6 +194,59 @@ def get_stories():
             "submitted": True,
         })
     return stories
+
+
+@app.get("/api/admin/submissions")
+def admin_list_submissions(x_admin_token: str = Header(default="")):
+    """Return all submissions for the admin review queue."""
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return load_submissions()
+
+
+@app.patch("/api/admin/submissions/{submission_id}")
+def admin_update_submission(
+    submission_id: str,
+    x_admin_token: str = Header(default=""),
+    status: Optional[str] = None,
+    visibility: Optional[str] = None,
+):
+    """Approve, reject, or change visibility of a submission."""
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    submissions = load_submissions()
+    for sub in submissions:
+        if sub["id"] == submission_id:
+            if status is not None and status in ("pending_review", "approved", "rejected"):
+                sub["status"] = status
+            if visibility is not None and visibility in ("public", "private"):
+                sub["visibility"] = visibility
+            save_submissions(submissions)
+            return {"ok": True, "id": submission_id, "status": sub.get("status"), "visibility": sub.get("visibility")}
+
+    raise HTTPException(status_code=404, detail="Submission not found")
+
+
+@app.delete("/api/admin/submissions/{submission_id}")
+def admin_delete_submission(submission_id: str, x_admin_token: str = Header(default="")):
+    """Permanently delete a submission and its uploaded files."""
+    if x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    submissions = load_submissions()
+    target = next((s for s in submissions if s["id"] == submission_id), None)
+    if not target:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    # Delete uploaded files from disk
+    for f in target.get("files", []):
+        path = UPLOAD_DIR / f.get("saved_as", "")
+        if path.exists():
+            path.unlink()
+
+    save_submissions([s for s in submissions if s["id"] != submission_id])
+    return {"ok": True, "deleted": submission_id}
 
 
 @app.get("/api/health")

@@ -418,7 +418,7 @@ export function StoryDetailPanel({ story, onClose }: StoryDetailPanelProps) {
     : FileText;
 
   return (
-    <div className="absolute top-0 right-0 w-full sm:w-[420px] h-full bg-white/95 backdrop-blur-sm z-[1000] overflow-y-auto shadow-2xl">
+    <div className="story-detail-panel absolute bottom-0 sm:top-0 right-0 w-full sm:w-[420px] max-h-[85dvh] sm:h-full bg-white/95 backdrop-blur-sm z-[1000] overflow-y-auto shadow-2xl rounded-t-2xl sm:rounded-none">
       <button
         type="button"
         onClick={onClose}
