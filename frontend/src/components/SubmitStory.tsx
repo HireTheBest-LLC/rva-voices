@@ -267,6 +267,28 @@ interface MediaFile {
   type: "image" | "audio" | "video" | "other";
 }
 
+// Prefer MP4/AAC — the only recording format Safari/iOS can play back.
+// Chrome/Edge 126+ support it too; older browsers fall back to WebM.
+function newAudioRecorder(stream: MediaStream): MediaRecorder {
+  const preferred = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
+  const mimeType = typeof MediaRecorder.isTypeSupported === "function"
+    ? preferred.find(t => MediaRecorder.isTypeSupported(t))
+    : undefined;
+  return new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+}
+
+// Label the blob with the format the browser actually recorded, not a guess.
+function recordedBlob(chunks: Blob[], rec: MediaRecorder | null): Blob {
+  const type = (chunks[0]?.type || rec?.mimeType || "audio/webm").split(";")[0];
+  return new Blob(chunks, { type });
+}
+
+function audioFilename(base: string, blob: Blob): string {
+  if (blob.type.includes("mp4")) return `${base}.m4a`;
+  if (blob.type.includes("ogg")) return `${base}.ogg`;
+  return `${base}.webm`;
+}
+
 function mediaType(f: File): MediaFile["type"] {
   if (f.type.startsWith("image/")) return "image";
   if (f.type.startsWith("audio/")) return "audio";
@@ -433,7 +455,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const startConsentRec = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
+      const rec = newAudioRecorder(stream);
       chunksRef.current = [];
       consentTranscriptRef.current = "";
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
@@ -468,7 +490,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
         };
         // onend fires AFTER all onresult callbacks — safe to validate here.
         recognition.onend = () => {
-          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+          const blob = recordedBlob(chunksRef.current, recorderRef.current);
           const transcript = consentTranscriptRef.current.toLowerCase().trim();
           const REJECTION_WORDS = [
             "no", "nope", "i do not", "i don't", "i dont", "i do not consent",
@@ -502,7 +524,7 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       } else {
         // SpeechRecognition unavailable — accept the recording without transcript check.
         recorderRef.current.addEventListener("stop", () => {
-          consentBlobRef.current = new Blob(chunksRef.current, { type: "audio/webm" });
+          consentBlobRef.current = recordedBlob(chunksRef.current, recorderRef.current);
           setConsentRecorded(true);
           setConsentError("");
         }, { once: true });
@@ -521,11 +543,11 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
   const startStoryRec = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
+      const rec = newAudioRecorder(stream);
       chunksRef.current = [];
       rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       rec.onstop = () => {
-        setStoryBlob(new Blob(chunksRef.current, { type: "audio/webm" }));
+        setStoryBlob(recordedBlob(chunksRef.current, rec));
         stream.getTracks().forEach(t => t.stop());
         if (timerRef.current) clearInterval(timerRef.current);
       };
@@ -624,10 +646,10 @@ export function SubmitStory({ onBack }: { onBack: () => void }) {
       fd.append("visibility", form.visibility);
 
       if (consentBlobRef.current) {
-        fd.append("consent_audio", consentBlobRef.current, "consent.webm");
+        fd.append("consent_audio", consentBlobRef.current, audioFilename("consent", consentBlobRef.current));
       }
       if (storyBlob) {
-        fd.append("story_audio", storyBlob, "story.webm");
+        fd.append("story_audio", storyBlob, audioFilename("story", storyBlob));
       }
       for (const mf of mediaFiles) {
         fd.append("media_files", mf.file, mf.file.name);

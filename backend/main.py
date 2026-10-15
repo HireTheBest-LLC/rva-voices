@@ -50,6 +50,21 @@ def save_submissions(data: list) -> None:
         json.dump(data, f, indent=2)
 
 
+def sniff_audio(content: bytes):
+    """Return (content_type, extension) from the file's magic bytes, or None."""
+    if content[4:8] == b"ftyp":
+        return "audio/mp4", ".m4a"
+    if content[:4] == b"\x1a\x45\xdf\xa3":
+        return "audio/webm", ".webm"
+    if content[:4] == b"OggS":
+        return "audio/ogg", ".ogg"
+    if content[:3] == b"ID3" or content[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "audio/mpeg", ".mp3"
+    if content[:4] == b"RIFF" and content[8:12] == b"WAVE":
+        return "audio/wav", ".wav"
+    return None
+
+
 async def save_upload(file: UploadFile, submission_id: str) -> dict:
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail=f"File type not allowed: {file.content_type}")
@@ -57,13 +72,21 @@ async def save_upload(file: UploadFile, submission_id: str) -> dict:
     if len(content) > MAX_FILE_BYTES:
         raise HTTPException(status_code=400, detail=f"File too large: {file.filename}")
     ext = Path(file.filename or "upload").suffix or ".bin"
+    content_type = file.content_type
+    # Browsers mislabel recordings (Safari records MP4 but older clients sent it
+    # as "webm"). Safari refuses to play a file whose served type is wrong, so
+    # trust the bytes, not the label.
+    if content_type.startswith("audio/"):
+        sniffed = sniff_audio(content)
+        if sniffed:
+            content_type, ext = sniffed
     filename = f"{submission_id}_{uuid.uuid4().hex[:8]}{ext}"
     dest = UPLOAD_DIR / filename
     dest.write_bytes(content)
     return {
         "original_name": file.filename,
         "saved_as": filename,
-        "content_type": file.content_type,
+        "content_type": content_type,
         "size_bytes": len(content),
         "url": f"/uploads/{filename}",
     }
