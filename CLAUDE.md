@@ -40,7 +40,7 @@ All hackathon research, rubric, and build guides live at:
 - **Backend:** FastAPI (Python) — `/backend`
 - **Database:** AWS DynamoDB (two tables)
 - **Audio storage:** AWS S3 (`rvavoices-audio` bucket)
-- **Hosting:** EC2 t3.micro at 3.235.16.98
+- **Hosting:** EC2 t3.micro at 100.59.138.214 (Elastic IP)
 - **Domain:** richmondstories.online (SSL via Let's Encrypt)
 - **Process manager:** PM2
 
@@ -125,7 +125,8 @@ Before marking any feature complete, verify against CHALLENGE.md weights:
 ## EC2 deployment
 ```bash
 # SSH
-ssh -i "C:\Users\david\.ssh\RichmondStories.pem" ubuntu@3.235.16.98
+ssh rva   # alias in ~/.ssh/config
+# or: ssh -i "C:\Devops\HTB\rva-voices\RichmondStories.pem" ubuntu@100.59.138.214
 
 # Deploy frontend
 cd ~/rva-voices/frontend && git pull && npm run build && pm2 restart frontend
